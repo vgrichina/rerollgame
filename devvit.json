@@ -37,7 +37,11 @@
   "permissions": {
     "reddit": {
       "enable": true,
-      "asUser": ["SUBMIT_POST", "SUBMIT_COMMENT", "SUBSCRIBE_TO_SUBREDDIT"]
+      "asUser": [
+        "SUBMIT_POST",
+        "SUBMIT_COMMENT",
+        "SUBSCRIBE_TO_SUBREDDIT"
+      ]
     },
     "media": true
   },
@@ -49,12 +53,12 @@
       "geminiKey": {
         "type": "string",
         "label": "Gemini API Key",
-        "secret": true
+        "isSecret": true
       },
       "openaiKey": {
         "type": "string",
         "label": "OpenAI API Key",
-        "secret": true
+        "isSecret": true
       },
       "geminiModel": {
         "type": "string",
@@ -71,5 +75,8 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build"
+  },
+  "dev": {
+    "subreddit": "rerollgame_dev"
   }
 }
