@@ -1,0 +1,31 @@
+{
+  "private": true,
+  "name": "rerollgame",
+  "version": "0.0.0",
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "deploy": "npm run build && devvit upload",
+    "dev": "devvit playtest",
+    "launch": "npm run deploy && devvit publish",
+    "login": "devvit login"
+  },
+  "engines": {
+    "node": ">=22.2.0"
+  },
+  "dependencies": {
+    "@devvit/start": "0.12.12",
+    "@devvit/web": "0.12.12",
+    "@hono/node-server": "1.19.8",
+    "devvit": "0.12.12",
+    "hono": "4.11.4",
+    "quickjs-emscripten": "^0.31.0",
+    "quickjs-emscripten-core": "^0.31.0",
+    "@jitl/quickjs-singlefile-cjs-release-sync": "^0.31.0"
+  },
+  "devDependencies": {
+    "vite": "7.3.1",
+    "vite-plugin-wasm": "^3.5.0"
+  }
+}

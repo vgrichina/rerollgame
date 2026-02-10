@@ -1,0 +1,75 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "rerollgame",
+  "post": {
+    "dir": "dist/client",
+    "entrypoints": {
+      "default": {
+        "inline": true,
+        "entry": "splash.html"
+      },
+      "game": {
+        "entry": "game.html"
+      },
+      "creator": {
+        "entry": "creator.html"
+      }
+    }
+  },
+  "media": {
+    "dir": "public"
+  },
+  "server": {
+    "dir": "dist/server",
+    "entry": "index.cjs"
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "Create a new post",
+        "description": "rerollgame",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/post-create"
+      }
+    ]
+  },
+  "permissions": {
+    "reddit": {
+      "enable": true,
+      "asUser": ["SUBMIT_POST", "SUBMIT_COMMENT", "SUBSCRIBE_TO_SUBREDDIT"]
+    },
+    "media": true
+  },
+  "triggers": {
+    "onAppInstall": "/internal/triggers/on-app-install"
+  },
+  "settings": {
+    "global": {
+      "geminiKey": {
+        "type": "string",
+        "label": "Gemini API Key",
+        "secret": true
+      },
+      "openaiKey": {
+        "type": "string",
+        "label": "OpenAI API Key",
+        "secret": true
+      },
+      "geminiModel": {
+        "type": "string",
+        "label": "Gemini Model (image gen)",
+        "defaultValue": "gemini-3-flash-preview"
+      },
+      "openaiModel": {
+        "type": "string",
+        "label": "OpenAI Model",
+        "defaultValue": "gpt-5.3-codex"
+      }
+    }
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build"
+  }
+}
