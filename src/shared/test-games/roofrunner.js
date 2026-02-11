@@ -333,17 +333,20 @@ function update(deltaTime, input) {
   cmds.push({ op: 'img', id: 'skyline', x: skyX + 400, y: 200, w: 400, h: 200 });
 
   // Buildings (foreground)
-  for (const b of s.buildings) {
+  for (let bi = 0; bi < s.buildings.length; bi++) {
+    const b = s.buildings[bi];
+    const bx = Math.round(b.x);
     const roofY = 400 - b.h;
     // Building body
-    cmds.push({ op: 'rect', x: b.x, y: roofY, w: b.w, h: b.h, fill: '#1e2a3a' });
+    cmds.push({ op: 'rect', x: bx, y: roofY, w: b.w, h: b.h, fill: '#1e2a3a' });
     // Roof edge
-    cmds.push({ op: 'rect', x: b.x - 2, y: roofY, w: b.w + 4, h: 4, fill: '#3a4a5a' });
-    // Windows
+    cmds.push({ op: 'rect', x: bx - 2, y: roofY, w: b.w + 4, h: 4, fill: '#3a4a5a' });
+    // Windows — use building index + grid position for stable lit pattern
     for (let wy = roofY + 14; wy < 400 - 10; wy += 20) {
-      for (let wx = b.x + 8; wx < b.x + b.w - 8; wx += 16) {
-        const lit = ((wx * 7 + wy * 13) % 5) > 1;
-        cmds.push({ op: 'rect', x: wx, y: wy, w: 8, h: 10, fill: lit ? '#ffdd66' : '#0a1520' });
+      const row = Math.floor((wy - roofY) / 20);
+      for (let col = 0; col * 16 + 8 < b.w - 8; col++) {
+        const lit = ((col * 7 + row * 13 + bi * 31) % 5) > 1;
+        cmds.push({ op: 'rect', x: bx + 8 + col * 16, y: wy, w: 8, h: 10, fill: lit ? '#ffdd66' : '#0a1520' });
       }
     }
   }
@@ -360,10 +363,11 @@ function update(deltaTime, input) {
         break;
       }
     }
+    const ox = Math.round(o.x);
     if (o.kind === 'crate') {
-      cmds.push({ op: 'img', id: 'crate', x: o.x, y: obstY, w: 24, h: 24 });
+      cmds.push({ op: 'img', id: 'crate', x: ox, y: obstY, w: 24, h: 24 });
     } else {
-      cmds.push({ op: 'img', id: 'antenna', x: o.x, y: obstY, w: 12, h: 40 });
+      cmds.push({ op: 'img', id: 'antenna', x: ox, y: obstY, w: 12, h: 40 });
     }
   }
 
@@ -375,8 +379,7 @@ function update(deltaTime, input) {
 
   // Player (with slight bob when running on ground)
   const bob = s.grounded ? Math.sin(s.runFrame * Math.PI / 2) * 2 : 0;
-  const flip = false;
-  cmds.push({ op: 'img', id: 'runner', x: s.px - 2, y: s.py - bob, w: 24, h: 32 });
+  cmds.push({ op: 'img', id: 'runner', x: Math.round(s.px - 2), y: Math.round(s.py - bob), w: 24, h: 32 });
 
   // Double-jump indicator
   if (!s.grounded && s.jumps < s.maxJumps) {
