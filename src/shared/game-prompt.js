@@ -1,5 +1,5 @@
 // Game prompt for LLM game generation (canvas command API)
-import bouncerCode from './test-games/bouncer.js?raw';
+import exampleCode from './test-games/roofrunner.js?raw';
 
 function getSystemPrompt() {
   return `You are a game developer AI. You create simple, fun HTML5 Canvas games.
@@ -112,13 +112,13 @@ function getRequirements() {
 <requirements>
 - MUST implement metadata(), resources(), update(deltaTime, input) as global functions
 - metadata() returns {title, description, controls:[], width, height} (default 400x400)
-- resources() returns {images:{}, sounds:{}}
+- resources() returns {images:{...}, sounds:{...}} — ALWAYS define images for game entities
 - update(dt, input) returns array of command objects
 - Use module-level \`let state;\` for game state, initialize on first update call
 - Always include score tracking: push {op:"score", value:N}
 - Include win/lose conditions: push {op:"gameOver"} when game ends
 - If implementing lives, game over when lives reach 0 (not below 0)
-- Keep graphics simple but fun - use basic shapes (rect, circle, text)
+- Define pixel art images in resources() using "hex" type for characters, items, enemies. Use "procedural" type for larger backgrounds. Draw them with {op:"img", id, x, y, w, h}. Use rect/circle/text for HUD, particles, and simple effects only.
 - Cap deltaTime: const dt = Math.min(deltaTime, 0.05)
 - No external dependencies, no DOM access, no fetch - pure logic only
 - Return commands as a flat array mixing draw + audio + meta commands
@@ -133,7 +133,7 @@ ${getResourcesReference()}
 
 <example-game>
 \`\`\`javascript
-${bouncerCode}
+${exampleCode}
 \`\`\`
 </example-game>
 ${getRequirements()}

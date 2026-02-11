@@ -1200,7 +1200,7 @@ async function renderPlaying() {
       <div id="game-container" style="flex:1; display:flex; align-items:center; justify-content:center; width:100%; overflow:hidden; position:relative; min-height:0;">
         <canvas id="preview-canvas" style="image-rendering: pixelated; background:#000;"></canvas>
       </div>
-      <div id="debug-drawer" style="display:${debugPanelOpen ? 'flex' : 'none'}; flex-direction:column; width:100%; max-height:40vh; background:var(--surface-1); border:1px solid var(--border); border-radius:8px; overflow:hidden; flex-shrink:0;">
+      <div id="debug-drawer" style="display:${debugPanelOpen ? 'flex' : 'none'}; flex-direction:column; width:100%; height:40vh; background:var(--surface-1); border:1px solid var(--border); border-radius:8px; overflow:hidden; flex-shrink:0;">
         <div id="debug-tabs" style="display:flex; border-bottom:1px solid var(--border); flex-shrink:0;">
           <button class="dbg-tab" data-tab="code" style="${dbgTabStyle('code')}">Code</button>
           <button class="dbg-tab" data-tab="imgs" style="${dbgTabStyle('imgs')}">Imgs</button>
