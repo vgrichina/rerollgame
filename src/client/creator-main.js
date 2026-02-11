@@ -49,6 +49,17 @@ let previewSandbox = null;
 let previewAnimFrame = null;
 let previewImagePool = {};
 
+// Debug inspection panel state
+let debugPanelOpen = false;
+let debugActiveTab = 'code';
+let debugGameCode = null;
+let debugResources = null;
+let debugMetadata = null;
+let debugExpandedImage = null;
+let debugFrameStats = null;
+let debugConsoleLog = [];
+let debugGameStartTime = 0;
+
 // Initialize slots
 rollAll();
 
@@ -813,6 +824,360 @@ function stopPreviewGame() {
   previewImagePool = {};
 }
 
+// --- Debug inspection panel ---
+function resetDebugStats() {
+  debugFrameStats = {
+    frameCount: 0,
+    cmdCounts: {},
+    imgInstances: {},
+    offscreen: [],
+    audioThisFrame: [],
+    totalCmds: 0,
+    peakCmds: 0,
+    peakFrame: 0,
+    cmdHistory: [],
+    fps: 0,
+    _fpsFrames: 0,
+    _fpsLastTime: performance.now(),
+  };
+  debugConsoleLog = [];
+}
+
+function addConsoleLog(type, msg) {
+  const elapsed = debugGameStartTime ? ((performance.now() - debugGameStartTime) / 1000) : 0;
+  const min = Math.floor(elapsed / 60);
+  const sec = (elapsed % 60).toFixed(1);
+  const time = `${min.toString().padStart(2, '0')}:${sec.padStart(4, '0')}`;
+  debugConsoleLog.push({ time, type, msg });
+  if (debugConsoleLog.length > 200) debugConsoleLog.shift();
+}
+
+function collectFrameStats(drawCmds, audioCmds, gw, gh) {
+  if (!debugFrameStats) return;
+  const s = debugFrameStats;
+  s.frameCount++;
+
+  s._fpsFrames++;
+  const now = performance.now();
+  if (now - s._fpsLastTime >= 1000) {
+    s.fps = Math.round(s._fpsFrames * 1000 / (now - s._fpsLastTime));
+    s._fpsFrames = 0;
+    s._fpsLastTime = now;
+    s.cmdHistory.push(s.totalCmds);
+    if (s.cmdHistory.length > 60) s.cmdHistory.shift();
+  }
+
+  s.cmdCounts = {};
+  s.imgInstances = {};
+  s.offscreen = [];
+  s.audioThisFrame = audioCmds;
+  s.totalCmds = drawCmds.length;
+
+  if (drawCmds.length > s.peakCmds) {
+    s.peakCmds = drawCmds.length;
+    s.peakFrame = s.frameCount;
+  }
+
+  for (const cmd of drawCmds) {
+    s.cmdCounts[cmd.op] = (s.cmdCounts[cmd.op] || 0) + 1;
+    if (cmd.op === 'img') {
+      s.imgInstances[cmd.id] = (s.imgInstances[cmd.id] || 0) + 1;
+      const w = cmd.w || 0, h = cmd.h || 0;
+      if (cmd.x + w < 0 || cmd.x > gw || cmd.y + h < 0 || cmd.y > gh) {
+        s.offscreen.push({ id: cmd.id, x: Math.round(cmd.x), y: Math.round(cmd.y) });
+      }
+    }
+  }
+}
+
+function toggleDebugPanel() {
+  debugPanelOpen = !debugPanelOpen;
+  const drawer = document.getElementById('debug-drawer');
+  const btn = document.getElementById('debug-btn');
+  if (drawer) drawer.style.display = debugPanelOpen ? 'flex' : 'none';
+  if (btn) btn.style.color = debugPanelOpen ? 'var(--primary)' : 'var(--text-3)';
+  if (debugPanelOpen) fillDebugTab();
+}
+
+function switchDebugTab(tab) {
+  debugActiveTab = tab;
+  debugExpandedImage = null;
+  document.querySelectorAll('.dbg-tab').forEach(el => {
+    el.style.color = el.dataset.tab === tab ? 'var(--primary)' : 'var(--text-3)';
+    el.style.borderBottom = el.dataset.tab === tab ? '2px solid var(--primary)' : '2px solid transparent';
+  });
+  fillDebugTab();
+}
+
+function fillDebugTab() {
+  const container = document.getElementById('debug-tab-content');
+  if (!container) return;
+  switch (debugActiveTab) {
+    case 'code': fillCodeTab(container); break;
+    case 'imgs': fillImgsTab(container); break;
+    case 'snd': fillSndTab(container); break;
+    case 'stats': fillStatsTab(container); break;
+    case 'log': fillLogTab(container); break;
+  }
+}
+
+function fillCodeTab(container) {
+  if (!debugGameCode) {
+    container.innerHTML = '<div style="color:var(--text-3); padding:8px;">No game code loaded</div>';
+    return;
+  }
+  const lines = debugGameCode.split('\n');
+  const lineCount = lines.length;
+  const size = (debugGameCode.length / 1024).toFixed(1);
+  const numbered = lines.map((line, i) =>
+    `<span style="color:var(--text-3); user-select:none;">${String(i + 1).padStart(3)}</span> ${escapeHtml(line)}`
+  ).join('\n');
+
+  container.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 8px; border-bottom:1px solid var(--border);">
+      <span style="color:var(--text-3); font-size:10px;">${lineCount} lines | ${size} KB</span>
+      <button id="dbg-copy-code" style="background:var(--surface-3); color:var(--text-2); border:none; border-radius:4px; padding:2px 8px; font-size:10px; cursor:pointer;">Copy</button>
+    </div>
+    <pre style="padding:8px; margin:0; overflow:auto; flex:1; font-size:11px; line-height:1.5; color:var(--text-1); font-family:monospace; white-space:pre; tab-size:2;">${numbered}</pre>
+  `;
+
+  document.getElementById('dbg-copy-code')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(debugGameCode).then(() => {
+      const btn = document.getElementById('dbg-copy-code');
+      if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); }
+    });
+  });
+}
+
+function fillImgsTab(container) {
+  const images = debugResources?.images;
+  if (!images || Object.keys(images).length === 0) {
+    container.innerHTML = '<div style="color:var(--text-3); padding:8px;">No images defined</div>';
+    return;
+  }
+
+  if (debugExpandedImage && images[debugExpandedImage]) {
+    fillExpandedImage(container, debugExpandedImage, images[debugExpandedImage]);
+    return;
+  }
+
+  const count = Object.keys(images).length;
+  const items = Object.entries(images).map(([id, res]) => `
+    <div class="dbg-img-item" data-id="${escapeHtml(id)}" style="display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer; padding:6px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2);">
+      <canvas class="dbg-img-canvas" data-id="${escapeHtml(id)}" width="1" height="1" style="image-rendering:pixelated; width:48px; height:48px; background:#000; border-radius:4px;"></canvas>
+      <div style="font-size:9px; color:var(--text-2); max-width:64px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center;">${escapeHtml(id)}</div>
+      <div style="font-size:8px; color:var(--text-3);">${res.type} ${res.w || '?'}x${res.h || '?'}</div>
+    </div>
+  `).join('');
+
+  container.innerHTML = `
+    <div style="padding:6px 8px; border-bottom:1px solid var(--border); font-size:10px; color:var(--text-3);">Images (${count}/20)</div>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; padding:8px; overflow:auto; flex:1;">
+      ${items}
+    </div>
+  `;
+
+  // Render bitmaps onto thumbnail canvases
+  requestAnimationFrame(() => {
+    container.querySelectorAll('.dbg-img-canvas').forEach(canvas => {
+      const id = canvas.dataset.id;
+      const bitmap = previewImagePool[id];
+      if (bitmap) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const cx = canvas.getContext('2d');
+        cx.drawImage(bitmap, 0, 0);
+      }
+    });
+  });
+
+  container.querySelectorAll('.dbg-img-item').forEach(el => {
+    el.addEventListener('click', () => {
+      debugExpandedImage = el.dataset.id;
+      fillDebugTab();
+    });
+  });
+}
+
+function fillExpandedImage(container, id, res) {
+  const bitmap = previewImagePool[id];
+  const details = [`Type: ${res.type}`, `Size: ${res.w || '?'} × ${res.h || '?'}`];
+  if (res.type === 'hex' && res.palette) details.push(`Palette: ${res.palette.join(' ')}`);
+  if (res.type === 'generate' && res.prompt) details.push(`Prompt: ${res.prompt}`);
+  if (res.type === 'procedural' && res.draw) details.push(`Draw ops: ${res.draw.length}`);
+
+  container.innerHTML = `
+    <div style="padding:6px 8px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:11px; color:var(--text-1); font-weight:600;">${escapeHtml(id)}</span>
+      <button id="dbg-img-back" style="background:var(--surface-3); color:var(--text-2); border:none; border-radius:4px; padding:2px 8px; font-size:10px; cursor:pointer;">Back</button>
+    </div>
+    <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:8px; overflow:auto;">
+      <canvas id="dbg-img-expanded" style="image-rendering:pixelated; max-width:100%; max-height:160px; background:#000; border:1px solid var(--border); border-radius:4px;"></canvas>
+      <div style="font-size:10px; color:var(--text-2); font-family:monospace; line-height:1.6;">
+        ${details.map(l => escapeHtml(l)).join('<br>')}
+      </div>
+    </div>
+  `;
+
+  requestAnimationFrame(() => {
+    const canvas = document.getElementById('dbg-img-expanded');
+    if (canvas && bitmap) {
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0);
+    }
+  });
+
+  document.getElementById('dbg-img-back')?.addEventListener('click', () => {
+    debugExpandedImage = null;
+    fillDebugTab();
+  });
+}
+
+function fillSndTab(container) {
+  const sounds = debugResources?.sounds;
+  if (!sounds || Object.keys(sounds).length === 0) {
+    container.innerHTML = '<div style="color:var(--text-3); padding:8px;">No sounds defined</div>';
+    return;
+  }
+
+  const count = Object.keys(sounds).length;
+  const items = Object.entries(sounds).map(([id, res]) => {
+    let info = '';
+    if (res.type === 'generate') {
+      info = `${res.wave || 'sine'}`;
+      if (res.note) info += ` | ${res.note}`;
+      if (res.notes) info += ` | ${res.notes.join(',')}`;
+      if (res.env) info += `<br>ADSR: ${res.env.a || 0}/${res.env.d || 0}/${res.env.s || 0}/${res.env.r || 0}`;
+      if (res.sweep) info += `<br>Sweep: ${res.sweep.from || '?'} → ${res.sweep.to || '?'}Hz`;
+      if (res.dur) info += ` | ${res.dur}s`;
+    } else if (res.type === 'pcm') {
+      const dur = res.data ? (res.data.length / (res.rate || 22050)).toFixed(2) : '?';
+      info = `pcm | ${res.rate || 22050}Hz | ${res.data?.length || 0} samples | ${dur}s`;
+    }
+    return `
+      <div style="display:flex; align-items:flex-start; gap:8px; padding:8px; border-bottom:1px solid var(--border);">
+        <button class="dbg-snd-play" data-id="${escapeHtml(id)}" style="background:var(--surface-3); color:var(--primary); border:1px solid var(--border); border-radius:50%; width:28px; height:28px; cursor:pointer; flex-shrink:0; font-size:12px; display:flex; align-items:center; justify-content:center;">&#9654;</button>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:11px; color:var(--text-1); font-weight:600;">${escapeHtml(id)}</div>
+          <div style="font-size:9px; color:var(--text-3); font-family:monospace; line-height:1.5; margin-top:2px;">${info}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="padding:6px 8px; border-bottom:1px solid var(--border); font-size:10px; color:var(--text-3);">Sounds (${count}/20)</div>
+    <div style="overflow:auto; flex:1;">${items}</div>
+  `;
+
+  container.querySelectorAll('.dbg-snd-play').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      tryResumeAudio();
+      processAudioCommands([{ op: 'sample', id: btn.dataset.id, ch: 7, vol: 0.5 }]);
+    });
+  });
+}
+
+function fillStatsTab(container) {
+  container.innerHTML = `<div id="dbg-stats-content" style="padding:8px; overflow:auto; flex:1; font-family:monospace; font-size:10px; line-height:1.6;"><div style="color:var(--text-3);">Collecting...</div></div>`;
+  updateStatsDOM();
+}
+
+function updateStatsDOM() {
+  const el = document.getElementById('dbg-stats-content');
+  if (!el || !debugFrameStats) return;
+  const s = debugFrameStats;
+
+  const maxCount = Math.max(1, ...Object.values(s.cmdCounts));
+  const cmdBars = Object.entries(s.cmdCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, count]) => {
+      const pct = Math.round(count / maxCount * 100);
+      return `<div style="display:flex; align-items:center; gap:6px; height:14px;">
+        <span style="width:52px; text-align:right; color:var(--text-2);">${type}</span>
+        <div style="flex:1; height:8px; background:var(--surface-2); border-radius:2px; overflow:hidden;">
+          <div style="width:${pct}%; height:100%; background:var(--primary); border-radius:2px;"></div>
+        </div>
+        <span style="width:24px; color:var(--text-1);">${count}</span>
+      </div>`;
+    }).join('');
+
+  const imgEntries = Object.entries(s.imgInstances).sort((a, b) => b[1] - a[1]);
+  const imgLine = imgEntries.map(([id, n]) => `${id} ×${n}`).join('  ');
+
+  const allImageIds = debugResources?.images ? Object.keys(debugResources.images) : [];
+  const unusedImgs = allImageIds.filter(id => !s.imgInstances[id]);
+
+  const offscreenHtml = s.offscreen.length > 0
+    ? `<div style="color:#f90; margin-top:4px;">&#9888; ${s.offscreen.length} offscreen: ${s.offscreen.slice(0, 3).map(o => `${o.id}@${o.x},${o.y}`).join(', ')}${s.offscreen.length > 3 ? '...' : ''}</div>`
+    : '';
+
+  const audioHtml = s.audioThisFrame.length > 0
+    ? s.audioThisFrame.map(a => `<span style="color:var(--accent-cyan);">&#9835; ${a.op} ${a.id || ''} ${a.wave || ''} ${a.note || ''}</span>`).join(' ')
+    : '<span style="color:var(--text-3);">--</span>';
+
+  const sparkline = renderSparkline(s.cmdHistory);
+
+  el.innerHTML = `
+    <div style="display:flex; justify-content:space-between; color:var(--text-1); font-size:12px; font-weight:600; margin-bottom:8px;">
+      <span>Frame ${s.frameCount}</span>
+      <span>${s.fps}fps</span>
+      <span>${s.totalCmds} cmd</span>
+    </div>
+    <div style="color:var(--text-3); font-size:9px; margin-bottom:4px;">COMMANDS BY TYPE</div>
+    ${cmdBars || '<div style="color:var(--text-3);">--</div>'}
+    <div style="color:var(--text-3); font-size:9px; margin-top:8px; margin-bottom:4px;">IMAGE INSTANCES</div>
+    <div style="color:var(--text-2); word-break:break-word;">${imgLine || '--'}</div>
+    ${unusedImgs.length > 0 ? `<div style="color:var(--text-3); margin-top:2px;">(unused: ${unusedImgs.join(', ')})</div>` : ''}
+    ${offscreenHtml}
+    <div style="color:var(--text-3); font-size:9px; margin-top:8px; margin-bottom:4px;">AUDIO THIS FRAME</div>
+    <div>${audioHtml}</div>
+    <div style="color:var(--text-3); font-size:9px; margin-top:8px; margin-bottom:4px;">CMD/FRAME (peak: ${s.peakCmds} @ #${s.peakFrame})</div>
+    ${sparkline}
+  `;
+}
+
+function renderSparkline(data) {
+  if (data.length < 2) return '<div style="color:var(--text-3);">collecting...</div>';
+  const max = Math.max(...data, 1);
+  const w = 200;
+  const h = 32;
+  const barW = Math.max(2, Math.floor(w / data.length) - 1);
+  const bars = data.map((v, i) => {
+    const barH = Math.max(1, Math.round(v / max * h));
+    const x = i * (barW + 1);
+    return `<div style="position:absolute; bottom:0; left:${x}px; width:${barW}px; height:${barH}px; background:var(--primary); border-radius:1px; opacity:${i === data.length - 1 ? 1 : 0.5};"></div>`;
+  }).join('');
+  return `<div style="position:relative; width:${w}px; height:${h}px; background:var(--surface-2); border-radius:4px; overflow:hidden; border:1px solid var(--border);">${bars}</div>`;
+}
+
+function fillLogTab(container) {
+  const entries = debugConsoleLog;
+  const errorCount = entries.filter(e => e.type === 'error').length;
+  const warnCount = entries.filter(e => e.type === 'warn').length;
+
+  const logHtml = entries.length > 0
+    ? entries.map(e => {
+        const color = e.type === 'error' ? 'var(--error)' : e.type === 'warn' ? '#f90' : 'var(--text-2)';
+        const icon = e.type === 'error' ? '&#10007;' : e.type === 'warn' ? '&#9888;' : '&#183;';
+        return `<div style="color:${color}; font-size:10px; padding:1px 0; font-family:monospace;"><span style="color:var(--text-3);">${e.time}</span> ${icon} ${escapeHtml(e.msg)}</div>`;
+      }).join('')
+    : '<div style="color:var(--text-3); padding:8px;">No events yet</div>';
+
+  container.innerHTML = `
+    <div style="padding:6px 8px; border-bottom:1px solid var(--border); font-size:10px; color:var(--text-3);">
+      ${entries.length} events${errorCount > 0 ? ` | <span style="color:var(--error);">${errorCount} errors</span>` : ''}${warnCount > 0 ? ` | <span style="color:#f90;">${warnCount} warnings</span>` : ''}
+    </div>
+    <div id="dbg-log-entries" style="overflow:auto; flex:1; padding:4px 8px;">${logHtml}</div>
+  `;
+
+  // Scroll to bottom
+  const logEl = document.getElementById('dbg-log-entries');
+  if (logEl) logEl.scrollTop = logEl.scrollHeight;
+}
+
 async function renderPlaying() {
   const versions = currentDraft?.versions || [];
   const version = versions[currentVersionIndex];
@@ -822,17 +1187,30 @@ async function renderPlaying() {
     return;
   }
 
+  const dbgTabStyle = (tab) => `background:none; border:none; font-size:11px; cursor:pointer; padding:4px 8px; color:${debugActiveTab === tab ? 'var(--primary)' : 'var(--text-3)'}; border-bottom:2px solid ${debugActiveTab === tab ? 'var(--primary)' : 'transparent'};`;
+
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; height:100vh; padding:8px; gap:6px;">
       <div style="display:flex; align-items:center; gap:12px;">
         <button id="stop-btn" style="background:var(--surface-3); color:var(--text-1); border:none; border-radius:12px; padding:6px 16px; font-size:12px; cursor:pointer;">STOP</button>
         <span style="color:var(--text-2); font-size:12px;">${escapeHtml(version.metadata?.title || 'Untitled')}</span>
         <button id="restart-btn" style="background:var(--surface-3); color:var(--text-1); border:none; border-radius:12px; padding:6px 16px; font-size:12px; cursor:pointer;">RESTART</button>
+        <button id="debug-btn" style="background:none; border:1px solid var(--border); border-radius:8px; padding:4px 10px; font-size:10px; font-family:monospace; cursor:pointer; color:${debugPanelOpen ? 'var(--primary)' : 'var(--text-3)'};">DBG</button>
       </div>
-      <div id="game-container" style="flex:1; display:flex; align-items:center; justify-content:center; width:100%; overflow:hidden; position:relative;">
+      <div id="game-container" style="flex:1; display:flex; align-items:center; justify-content:center; width:100%; overflow:hidden; position:relative; min-height:0;">
         <canvas id="preview-canvas" style="image-rendering: pixelated; background:#000;"></canvas>
       </div>
-      <div id="preview-score" style="color:var(--primary); font-size:14px; font-weight:bold; height:20px;"></div>
+      <div id="debug-drawer" style="display:${debugPanelOpen ? 'flex' : 'none'}; flex-direction:column; width:100%; max-height:40vh; background:var(--surface-1); border:1px solid var(--border); border-radius:8px; overflow:hidden; flex-shrink:0;">
+        <div id="debug-tabs" style="display:flex; border-bottom:1px solid var(--border); flex-shrink:0;">
+          <button class="dbg-tab" data-tab="code" style="${dbgTabStyle('code')}">Code</button>
+          <button class="dbg-tab" data-tab="imgs" style="${dbgTabStyle('imgs')}">Imgs</button>
+          <button class="dbg-tab" data-tab="snd" style="${dbgTabStyle('snd')}">Snd</button>
+          <button class="dbg-tab" data-tab="stats" style="${dbgTabStyle('stats')}">Stats</button>
+          <button class="dbg-tab" data-tab="log" style="${dbgTabStyle('log')}">Log</button>
+        </div>
+        <div id="debug-tab-content" style="flex:1; overflow:auto; display:flex; flex-direction:column; min-height:0;"></div>
+      </div>
+      <div id="preview-score" style="color:var(--primary); font-size:14px; font-weight:bold; height:20px; flex-shrink:0;"></div>
       <div id="preview-error" style="color:var(--error); font-size:12px; max-width:360px; text-align:center; display:none;"></div>
       <div id="preview-gameover" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); flex-direction:column; align-items:center; justify-content:center; gap:12px; animation:fadeIn 0.4s ease-out;">
         <div style="color:var(--text-1); font-family:var(--font-display); font-size:24px; text-transform:uppercase; letter-spacing:3px; text-shadow:0 0 20px var(--primary-glow);">Game Over</div>
@@ -851,6 +1229,11 @@ async function renderPlaying() {
   document.getElementById('restart-btn').addEventListener('click', () => {
     stopPreviewGame();
     renderPlaying();
+  });
+
+  document.getElementById('debug-btn').addEventListener('click', toggleDebugPanel);
+  document.querySelectorAll('.dbg-tab').forEach(el => {
+    el.addEventListener('click', () => switchDebugTab(el.dataset.tab));
   });
 
   document.getElementById('preview-go-replay')?.addEventListener('click', () => {
@@ -915,6 +1298,18 @@ async function startPreviewGame(code) {
       await preloadSounds(resources.sounds);
     }
 
+    // Save for debug panel
+    debugGameCode = code;
+    debugResources = resources;
+    debugMetadata = metadata;
+    debugGameStartTime = performance.now();
+    resetDebugStats();
+    const imgCount = resources.images ? Object.keys(resources.images).length : 0;
+    const sndCount = resources.sounds ? Object.keys(resources.sounds).length : 0;
+    addConsoleLog('info', `Loaded: ${metadata.title || 'Untitled'} (${gameWidth}×${gameHeight})`);
+    addConsoleLog('info', `Resources: ${imgCount} images, ${sndCount} sounds`);
+    if (debugPanelOpen) fillDebugTab();
+
     // Input state for this preview session
     const input = {
       up: false, down: false, left: false, right: false, a: false, b: false,
@@ -973,6 +1368,7 @@ async function startPreviewGame(code) {
     resizeObs.observe(container);
 
     let lastTime = performance.now();
+    let lastSlowLogTime = 0;
     function loop(now) {
       if (isGameOver || !previewSandbox) return;
 
@@ -984,12 +1380,19 @@ async function startPreviewGame(code) {
       }
       input.pointerPressed = input.pointerDown && !prevInput.pointerDown;
 
+      const _t0 = performance.now();
       const commands = previewSandbox.callUpdate(dt, input);
+      const _updateMs = performance.now() - _t0;
 
       Object.assign(prevInput, input);
       input.pointerPressed = false;
       for (const key of ['up', 'down', 'left', 'right', 'a', 'b']) {
         input[key + 'Pressed'] = false;
+      }
+
+      if (_updateMs > 16 && now - lastSlowLogTime > 2000) {
+        addConsoleLog('warn', `update() took ${_updateMs.toFixed(1)}ms`);
+        lastSlowLogTime = now;
       }
 
       if (Array.isArray(commands)) {
@@ -1001,6 +1404,7 @@ async function startPreviewGame(code) {
             if (scoreEl) scoreEl.textContent = 'SCORE: ' + cmd.value;
           } else if (cmd.op === 'gameOver') {
             isGameOver = true;
+            addConsoleLog('info', `Game Over (score: ${cmd.value || 0})`);
             if (scoreEl) scoreEl.textContent = '';
             const goOverlay = document.getElementById('preview-gameover');
             const goScore = document.getElementById('preview-go-score');
@@ -1009,11 +1413,25 @@ async function startPreviewGame(code) {
           } else if (['tone', 'noise', 'sample', 'stop', 'stopAll', 'volume'].includes(cmd.op)) {
             audioCmds.push(cmd);
           } else {
+            if (cmd.op === 'text' && cmd.text?.startsWith('ERROR:')) {
+              addConsoleLog('error', cmd.text);
+            }
             drawCmds.push(cmd);
           }
         }
         executeCommands(ctx, drawCmds, previewImagePool);
         processAudioCommands(audioCmds);
+
+        // Debug stats collection
+        collectFrameStats(drawCmds, audioCmds, gameWidth, gameHeight);
+        if (debugPanelOpen && debugFrameStats) {
+          if (debugActiveTab === 'stats' && debugFrameStats.frameCount % 30 === 0) {
+            updateStatsDOM();
+          }
+          if (debugActiveTab === 'log' && debugFrameStats.frameCount % 60 === 0) {
+            fillLogTab(document.getElementById('debug-tab-content'));
+          }
+        }
       }
 
       previewAnimFrame = requestAnimationFrame(loop);
@@ -1021,6 +1439,7 @@ async function startPreviewGame(code) {
     previewAnimFrame = requestAnimationFrame(loop);
   } catch (err) {
     console.error('Preview game error:', err);
+    addConsoleLog('error', `Load error: ${err.message}`);
     if (errorEl) {
       errorEl.style.display = 'block';
       errorEl.textContent = 'Error: ' + err.message;
