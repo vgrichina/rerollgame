@@ -80,38 +80,55 @@ function render() {
 }
 
 // --- Drafts List ---
+function getDraftGenre(d) {
+  // Try to extract genre from description
+  const desc = d.description || '';
+  const match = desc.match(/^a (\w[\w\s-]*?) game/i);
+  return match ? match[1] : null;
+}
+
 function renderDraftsList() {
   const draftItems = drafts.map(d => {
-    const statusBadge = d.status === 'generating'
-      ? '<span style="color:#f90; font-size:11px;">generating...</span>'
+    const genre = getDraftGenre(d);
+    const statusDot = d.status === 'generating'
+      ? '<span style="width:8px; height:8px; border-radius:50%; background:#f90; display:inline-block; animation:pulse 1.5s ease-in-out infinite;"></span>'
       : d.status === 'published'
-        ? '<span style="color:#4a4; font-size:11px;">published</span>'
-        : '';
+        ? '<span style="width:8px; height:8px; border-radius:50%; background:#39ff14; display:inline-block;"></span>'
+        : '<span style="width:8px; height:8px; border-radius:50%; background:#444; display:inline-block;"></span>';
+    const statusText = d.status === 'generating' ? 'generating' : d.status === 'published' ? 'published' : 'draft';
+    const borderColor = d.status === 'generating' ? '#f90' : d.status === 'published' ? '#39ff14' : '#2a2a2a';
     return `
-      <div class="draft-item" data-id="${d.id}" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#1a1a1a; border-radius:8px; cursor:pointer; border:1px solid #333;">
-        <div>
-          <div style="font-size:14px; font-weight:600; color:#fff;">${escapeHtml(d.title)}</div>
-          <div style="font-size:12px; color:#888; margin-top:2px;">${escapeHtml(d.description || '')}</div>
+      <div class="draft-item" data-id="${d.id}" style="display:flex; align-items:center; gap:12px; padding:12px 14px; background:#111; border-radius:10px; cursor:pointer; border:1px solid #2a2a2a; border-left:3px solid ${borderColor}; transition:background 0.15s;">
+        <div style="width:44px; height:44px; background:#1a1a1a; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:inset 0 1px 4px rgba(0,0,0,0.4);">
+          <span style="font-size:18px; color:#555;">${genre ? '&#127918;' : '&#9776;'}</span>
         </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          ${statusBadge}
-          <button class="delete-draft" data-id="${d.id}" style="background:none; border:none; color:#666; font-size:16px; cursor:pointer; padding:4px;">x</button>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:14px; font-weight:600; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.title || 'Untitled')}</div>
+          <div style="display:flex; align-items:center; gap:6px; margin-top:3px;">
+            ${genre ? `<span style="font-size:10px; color:#888; background:#1a1a1a; border:1px solid #333; border-radius:4px; padding:1px 6px;">${escapeHtml(genre)}</span>` : ''}
+            <span style="display:flex; align-items:center; gap:4px; font-size:10px; color:#666;">${statusDot} ${statusText}</span>
+          </div>
         </div>
+        <button class="delete-draft" data-id="${d.id}" style="background:none; border:none; color:#444; font-size:14px; cursor:pointer; padding:6px; flex-shrink:0; transition:color 0.15s;">&times;</button>
       </div>`;
   }).join('');
 
   root.innerHTML = `
-    <div style="display:flex; flex-direction:column; height:100vh; padding:20px; gap:12px;">
+    <div style="display:flex; flex-direction:column; height:100vh; padding:16px; gap:10px;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">rerollgame</h1>
+        <h1 style="font-size:18px; font-weight:bold; color:#fff;">My Games</h1>
+        <button id="new-game-btn" style="background:#ff4500; color:#fff; border:none; border-radius:10px; padding:8px 16px; font-size:13px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">+ New</button>
       </div>
-      <button id="new-game-btn" style="background:#ff4500; color:#fff; border:none; border-radius:12px; padding:14px; font-size:15px; font-weight:bold; cursor:pointer; width:100%;">
-        + NEW GAME
-      </button>
-      <div style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
-        ${drafts.length > 0 ? draftItems : '<p style="color:#666; text-align:center; margin-top:40px;">No drafts yet. Create your first game!</p>'}
+      <div style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
+        ${drafts.length > 0 ? draftItems : '<p style="color:#555; text-align:center; margin-top:40px; font-size:14px;">No games yet</p>'}
       </div>
     </div>
+    <style>
+      .draft-item:hover { background: #181818 !important; }
+      .delete-draft:hover { color: #f44 !important; }
+      #new-game-btn:active { transform: scale(0.96); }
+      @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+    </style>
   `;
 
   document.getElementById('new-game-btn').addEventListener('click', () => {
@@ -176,22 +193,26 @@ async function resumeDraft(draftId) {
 // --- Roll (slot machine) ---
 function renderRoll() {
   const slotRows = SLOT_KEYS.map(key => `
-    <div style="display:flex; align-items:center; gap:8px; width:100%; max-width:360px;">
-      <span style="color:#888; font-size:11px; text-transform:uppercase; width:64px; text-align:right; flex-shrink:0;">${SLOT_LABELS[key]}</span>
-      <div class="slot-value" data-key="${key}" style="flex:1; background:#1a1a1a; border:1px solid #333; border-radius:8px; padding:10px 14px; color:#fff; font-size:14px; cursor:pointer; transition:background 0.15s; user-select:none;">${escapeHtml(slotValues[key])}</div>
+    <div style="width:100%; max-width:360px;">
+      <div style="color:#666; font-size:10px; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:4px; padding-left:2px;">${SLOT_LABELS[key]}</div>
+      <div class="slot-value" data-key="${key}" style="background:#111; border:1px solid #2a2a2a; border-radius:10px; padding:12px 16px; color:#fff; font-size:15px; cursor:pointer; user-select:none; box-shadow:inset 0 2px 8px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.04); display:flex; justify-content:space-between; align-items:center; transition:background 0.15s, border-color 0.15s;">
+        <span class="slot-text">${escapeHtml(slotValues[key])}</span>
+        <span style="color:#555; font-size:13px;">&#8635;</span>
+      </div>
     </div>
   `).join('');
 
   root.innerHTML = `
-    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:14px; padding:20px;">
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:12px; padding:20px;">
       <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">rerollgame</h1>
-      <p style="color:#888; font-size:13px;">Tap a slot to re-roll it</p>
-      ${slotRows}
-      <div style="display:flex; gap:10px; margin-top:8px;">
-        <button id="roll-all-btn" style="background:#222; color:#ff4500; border:1px solid #ff4500; border-radius:20px; padding:10px 24px; font-size:14px; font-weight:bold; cursor:pointer;">
+      <div style="display:flex; flex-direction:column; gap:10px; width:100%; align-items:center;">
+        ${slotRows}
+      </div>
+      <div style="display:flex; gap:10px; margin-top:12px;">
+        <button id="roll-all-btn" style="background:#1a1a1a; color:#ff4500; border:1px solid #ff4500; border-radius:20px; padding:11px 28px; font-size:14px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">
           ROLL
         </button>
-        <button id="generate-btn" style="background:#ff4500; color:#fff; border:none; border-radius:20px; padding:10px 24px; font-size:14px; font-weight:bold; cursor:pointer;">
+        <button id="generate-btn" style="background:#ff4500; color:#fff; border:none; border-radius:20px; padding:11px 28px; font-size:14px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">
           GENERATE
         </button>
       </div>
@@ -200,10 +221,11 @@ function renderRoll() {
       </button>
     </div>
     <style>
-      .slot-value:hover { background: #252525 !important; }
-      .slot-value:active { background: #333 !important; }
-      .slot-spin { animation: slotSpin 0.3s ease-out; }
-      @keyframes slotSpin { 0% { opacity:0; transform:translateY(-8px); } 100% { opacity:1; transform:translateY(0); } }
+      .slot-value:hover { background: #181818 !important; border-color: #444 !important; }
+      .slot-value:active { transform: scale(0.98); }
+      .slot-spin .slot-text { animation: slotSpin 0.3s ease-out; display:inline-block; }
+      @keyframes slotSpin { 0% { opacity:0; transform:translateY(-12px); } 100% { opacity:1; transform:translateY(0); } }
+      #roll-all-btn:active, #generate-btn:active { transform: scale(0.96); }
     </style>
   `;
 
@@ -212,21 +234,25 @@ function renderRoll() {
     el.addEventListener('click', () => {
       const key = el.dataset.key;
       rollOne(key);
-      el.textContent = slotValues[key];
+      const textEl = el.querySelector('.slot-text');
+      if (textEl) textEl.textContent = slotValues[key];
       el.classList.remove('slot-spin');
       void el.offsetWidth; // reflow
       el.classList.add('slot-spin');
     });
   });
 
-  // Roll all
+  // Roll all with staggered animation
   document.getElementById('roll-all-btn').addEventListener('click', () => {
     rollAll();
-    root.querySelectorAll('.slot-value').forEach(el => {
-      el.textContent = slotValues[el.dataset.key];
-      el.classList.remove('slot-spin');
-      void el.offsetWidth;
-      el.classList.add('slot-spin');
+    root.querySelectorAll('.slot-value').forEach((el, i) => {
+      setTimeout(() => {
+        const textEl = el.querySelector('.slot-text');
+        if (textEl) textEl.textContent = slotValues[el.dataset.key];
+        el.classList.remove('slot-spin');
+        void el.offsetWidth;
+        el.classList.add('slot-spin');
+      }, i * 100);
     });
   });
 
@@ -323,23 +349,46 @@ async function startEdit(description) {
 }
 
 // --- Generating (polling) ---
+function getGenerationSteps() {
+  return [
+    { label: `Setting up ${slotValues.genre || 'game'} engine`, threshold: 10 },
+    { label: `Building ${slotValues.theme || 'world'} theme`, threshold: 30 },
+    { label: `Adding ${slotValues.mechanic || 'mechanics'}`, threshold: 55 },
+    { label: `Wiring ${slotValues.twist || 'twist'} logic`, threshold: 75 },
+    { label: 'Polishing & testing', threshold: 90 },
+  ];
+}
+
 function renderGenerating() {
   const elapsed = generationStartTime ? Math.round((Date.now() - generationStartTime) / 1000) : 0;
+  const steps = getGenerationSteps();
   const debugLines = debugLog.slice(-20).map(l => `<div style="color:#888; font-size:10px; font-family:monospace; white-space:pre-wrap;">[${l.time}] ${escapeHtml(l.msg)}</div>`).join('');
+
+  const stepsHtml = steps.map((step, i) => {
+    const done = progressValue >= step.threshold;
+    const active = !done && (i === 0 || progressValue >= steps[i - 1].threshold);
+    const icon = done ? '<span style="color:#39ff14;">&#10003;</span>' : active ? '<span class="gen-spinner">&#9697;</span>' : '<span style="color:#444;">&#9675;</span>';
+    const color = done ? '#39ff14' : active ? '#fff' : '#555';
+    return `<div style="display:flex; align-items:center; gap:10px; padding:6px 0; color:${color}; font-size:13px; transition:color 0.3s;">${icon} ${escapeHtml(step.label)}</div>`;
+  }).join('');
 
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:16px; padding:20px;">
-      <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">rerollgame</h1>
-      <div style="width:80%; max-width:300px; height:8px; background:#222; border-radius:4px; overflow:hidden;">
-        <div id="progress-bar" style="height:100%; background:#ff4500; border-radius:4px; transition:width 0.5s; width:${progressValue}%;"></div>
+      <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">Building your game</h1>
+      <div style="width:80%; max-width:300px;">
+        <div id="gen-steps">${stepsHtml}</div>
       </div>
-      <p style="color:#aaa; font-size:14px;">Generating your game...</p>
-      <p id="progress-text" style="color:#666; font-size:12px;">${progressValue}% — ${elapsed}s elapsed — poll #${pollCount}</p>
-      <button id="cancel-btn" style="background:transparent; color:#888; border:1px solid #444; border-radius:16px; padding:6px 16px; font-size:12px; cursor:pointer; margin-top:4px;">Cancel</button>
-      <div style="width:100%; max-width:400px; margin-top:12px;">
-        <button id="debug-toggle" style="background:transparent; color:#666; border:none; font-size:11px; cursor:pointer; text-decoration:underline;">
+      <div style="width:80%; max-width:300px; height:6px; background:#222; border-radius:3px; overflow:hidden; margin-top:4px;">
+        <div id="progress-bar" style="height:100%; background:linear-gradient(90deg, #ff4500, #ff6a33); border-radius:3px; transition:width 0.5s; width:${progressValue}%;"></div>
+      </div>
+      <p id="progress-text" style="color:#555; font-size:11px;">${progressValue}%</p>
+      <div style="display:flex; gap:12px; align-items:center;">
+        <button id="cancel-btn" style="background:transparent; color:#888; border:1px solid #444; border-radius:16px; padding:6px 16px; font-size:12px; cursor:pointer;">Cancel</button>
+        <button id="debug-toggle" style="background:transparent; color:#555; border:none; font-size:11px; cursor:pointer; text-decoration:underline;">
           ${debugExpanded ? 'Hide' : 'Show'} Debug
         </button>
+      </div>
+      <div style="width:100%; max-width:400px;">
         <div id="debug-panel" style="display:${debugExpanded ? 'block' : 'none'}; margin-top:8px; padding:10px; background:#111; border:1px solid #333; border-radius:8px; max-height:300px; overflow-y:auto;">
           <div style="font-size:11px; color:#ff4500; font-weight:600; margin-bottom:6px;">Job Debug</div>
           <div style="font-size:10px; color:#aaa; font-family:monospace; margin-bottom:8px;">
@@ -364,6 +413,10 @@ function renderGenerating() {
         </div>
       </div>
     </div>
+    <style>
+      @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      .gen-spinner { display:inline-block; animation: spin 1s linear infinite; color: #ff4500; }
+    </style>
   `;
 
   document.getElementById('cancel-btn').addEventListener('click', () => {
@@ -451,11 +504,22 @@ async function pollJob() {
         progressValue = data.progress;
       }
       // Update UI in-place without full re-render
-      const elapsed = generationStartTime ? Math.round((Date.now() - generationStartTime) / 1000) : 0;
       const bar = document.getElementById('progress-bar');
       const text = document.getElementById('progress-text');
       if (bar) bar.style.width = `${progressValue}%`;
-      if (text) text.textContent = `${progressValue}% — ${elapsed}s elapsed — poll #${pollCount}`;
+      if (text) text.textContent = `${progressValue}%`;
+      // Update checklist steps
+      const stepsEl = document.getElementById('gen-steps');
+      if (stepsEl) {
+        const steps = getGenerationSteps();
+        stepsEl.innerHTML = steps.map((step, i) => {
+          const done = progressValue >= step.threshold;
+          const active = !done && (i === 0 || progressValue >= steps[i - 1].threshold);
+          const icon = done ? '<span style="color:#39ff14;">&#10003;</span>' : active ? '<span class="gen-spinner">&#9697;</span>' : '<span style="color:#444;">&#9675;</span>';
+          const color = done ? '#39ff14' : active ? '#fff' : '#555';
+          return `<div style="display:flex; align-items:center; gap:10px; padding:6px 0; color:${color}; font-size:13px; transition:color 0.3s;">${icon} ${escapeHtml(step.label)}</div>`;
+        }).join('');
+      }
       return;
     }
 
@@ -521,7 +585,7 @@ async function onGenerationComplete(gameDefinition) {
 }
 
 // --- Preview ---
-function renderPreview() {
+async function renderPreview() {
   const versions = currentDraft?.versions || [];
   const version = versions[currentVersionIndex];
   if (!version) {
@@ -532,43 +596,50 @@ function renderPreview() {
   }
 
   const title = version.metadata?.title || currentDraft?.title || 'Untitled Game';
-  const desc = version.metadata?.description || '';
   const versionCount = versions.length;
-  const versionLabel = versionCount > 1 ? `Version ${currentVersionIndex + 1} of ${versionCount}` : '';
+  const versionLabel = versionCount > 1 ? `v${currentVersionIndex + 1}/${versionCount}` : '';
 
   root.innerHTML = `
-    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:12px; padding:20px;">
-      <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">Preview</h1>
-      <h2 style="font-size:18px; font-weight:600; color:#fff;">${escapeHtml(title)}</h2>
-      ${desc ? `<p style="color:#aaa; font-size:13px; text-align:center; max-width:300px;">${escapeHtml(desc)}</p>` : ''}
-      ${versionLabel ? `<p style="color:#666; font-size:12px;">${versionLabel}</p>` : ''}
-      ${versionCount > 1 ? `
-        <div style="display:flex; gap:8px;">
-          <button id="prev-ver" style="background:#222; color:#fff; border:1px solid #444; border-radius:8px; padding:6px 14px; font-size:13px; cursor:pointer;" ${currentVersionIndex <= 0 ? 'disabled style="opacity:0.4; background:#222; color:#fff; border:1px solid #444; border-radius:8px; padding:6px 14px; font-size:13px; cursor:default;"' : ''}>Prev</button>
-          <button id="next-ver" style="background:#222; color:#fff; border:1px solid #444; border-radius:8px; padding:6px 14px; font-size:13px; cursor:pointer;" ${currentVersionIndex >= versionCount - 1 ? 'disabled style="opacity:0.4; background:#222; color:#fff; border:1px solid #444; border-radius:8px; padding:6px 14px; font-size:13px; cursor:default;"' : ''}>Next</button>
-        </div>
-      ` : ''}
-      <button id="play-btn" style="background:#ff4500; color:#fff; border:none; border-radius:20px; padding:14px 40px; font-size:16px; font-weight:bold; cursor:pointer; margin-top:4px;">
-        PLAY
-      </button>
-      <div style="display:flex; gap:8px; margin-top:8px;">
-        <button id="publish-btn" style="background:#222; color:#ff4500; border:1px solid #ff4500; border-radius:20px; padding:10px 24px; font-size:14px; font-weight:bold; cursor:pointer;">
-          PUBLISH
-        </button>
-        <button id="edit-btn" style="background:transparent; color:#ff4500; border:1px solid #ff4500; border-radius:20px; padding:10px 20px; font-size:13px; cursor:pointer;">
-          EDIT
-        </button>
-        <button id="reroll-btn" style="background:transparent; color:#888; border:1px solid #444; border-radius:20px; padding:10px 20px; font-size:13px; cursor:pointer;">
-          REROLL
-        </button>
+    <div style="display:flex; flex-direction:column; align-items:center; height:100vh; padding:16px; gap:10px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; width:100%; max-width:360px;">
+        <h2 style="font-size:16px; font-weight:600; color:#fff; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(title)}</h2>
+        ${versionLabel ? `<div style="display:flex; align-items:center; gap:6px;">
+          <span style="color:#555; font-size:12px;">${versionLabel}</span>
+          ${versionCount > 1 ? `
+            <button id="prev-ver" style="background:#222; color:#fff; border:1px solid #333; border-radius:6px; padding:2px 8px; font-size:12px; cursor:pointer; ${currentVersionIndex <= 0 ? 'opacity:0.3; cursor:default;' : ''}">&lsaquo;</button>
+            <button id="next-ver" style="background:#222; color:#fff; border:1px solid #333; border-radius:6px; padding:2px 8px; font-size:12px; cursor:pointer; ${currentVersionIndex >= versionCount - 1 ? 'opacity:0.3; cursor:default;' : ''}">&rsaquo;</button>
+          ` : ''}
+        </div>` : ''}
       </div>
-      <button id="back-btn" style="background:transparent; color:#888; border:none; font-size:13px; cursor:pointer; text-decoration:underline; margin-top:4px;">
-        Back to drafts
+      <div id="preview-thumb-container" style="flex:1; width:100%; max-width:360px; display:flex; align-items:center; justify-content:center; position:relative; cursor:pointer; border-radius:12px; overflow:hidden; background:#000; min-height:200px;">
+        <canvas id="preview-thumb" style="image-rendering:pixelated; max-width:100%; max-height:100%; object-fit:contain;"></canvas>
+        <div id="play-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.35); transition:background 0.2s;">
+          <div style="width:56px; height:56px; background:rgba(255,69,0,0.9); border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 20px rgba(255,69,0,0.4);">
+            <div style="width:0; height:0; border-style:solid; border-width:10px 0 10px 18px; border-color:transparent transparent transparent #fff; margin-left:3px;"></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; width:100%; max-width:360px; justify-content:center;">
+        <button id="publish-btn" style="flex:1; background:#1a1a1a; color:#ff4500; border:1px solid #ff4500; border-radius:12px; padding:10px; font-size:13px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">PUBLISH</button>
+        <button id="edit-btn" style="flex:1; background:#1a1a1a; color:#aaa; border:1px solid #333; border-radius:12px; padding:10px; font-size:13px; cursor:pointer; transition:transform 0.1s;">EDIT</button>
+        <button id="reroll-btn" style="width:44px; background:#1a1a1a; color:#666; border:1px solid #333; border-radius:12px; padding:10px; font-size:15px; cursor:pointer; transition:transform 0.1s;" title="Reroll">&#8635;</button>
+      </div>
+      <button id="back-btn" style="background:transparent; color:#666; border:none; font-size:12px; cursor:pointer; text-decoration:underline;">
+        drafts
       </button>
     </div>
+    <style>
+      #preview-thumb-container:hover #play-overlay { background: rgba(0,0,0,0.2); }
+      #publish-btn:active, #edit-btn:active, #reroll-btn:active { transform: scale(0.96); }
+    </style>
   `;
 
-  document.getElementById('play-btn').addEventListener('click', () => {
+  // Render first frame thumbnail
+  if (version.gameCode) {
+    renderThumbnail(version.gameCode);
+  }
+
+  document.getElementById('preview-thumb-container').addEventListener('click', () => {
     state = 'playing';
     render();
   });
@@ -610,6 +681,51 @@ function renderPreview() {
   }
 }
 
+async function renderThumbnail(code) {
+  const canvas = document.getElementById('preview-thumb');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let w = 400, h = 400;
+
+  try {
+    await initQuickJS();
+    const thumbSandbox = createSandbox();
+    const { metadata, resources } = thumbSandbox.loadGame(code);
+    if (metadata.width) w = metadata.width;
+    if (metadata.height) h = metadata.height;
+    canvas.width = w;
+    canvas.height = h;
+
+    let thumbImages = {};
+    if (resources.images) {
+      thumbImages = await loadPreviewImages(resources.images, ctx);
+    }
+
+    // Run one frame with zero input to get initial state
+    const emptyInput = {
+      up:false, down:false, left:false, right:false, a:false, b:false,
+      upPressed:false, downPressed:false, leftPressed:false, rightPressed:false,
+      aPressed:false, bPressed:false,
+      pointerDown:false, pointerX:0, pointerY:0, pointerPressed:false,
+    };
+    const commands = thumbSandbox.callUpdate(0.016, emptyInput);
+    if (Array.isArray(commands)) {
+      const drawCmds = commands.filter(c => c && c.op && !['tone','noise','sample','stop','stopAll','volume','score','gameOver'].includes(c.op));
+      executeCommands(ctx, drawCmds, thumbImages);
+    }
+    thumbSandbox.dispose();
+  } catch (err) {
+    canvas.width = w;
+    canvas.height = h;
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#444';
+    ctx.font = '14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Preview unavailable', w / 2, h / 2);
+  }
+}
+
 // --- Playing (inline game preview) ---
 function stopPreviewGame() {
   if (previewAnimFrame) {
@@ -644,6 +760,12 @@ async function renderPlaying() {
       </div>
       <div id="preview-score" style="color:#ff4500; font-size:14px; font-weight:bold; height:20px;"></div>
       <div id="preview-error" style="color:#f44; font-size:12px; max-width:360px; text-align:center; display:none;"></div>
+      <div id="preview-gameover" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); flex-direction:column; align-items:center; justify-content:center; gap:12px; animation:fadeIn 0.4s ease-out;">
+        <div style="color:#fff; font:bold 24px monospace; text-transform:uppercase; letter-spacing:3px; text-shadow:0 0 20px rgba(255,69,0,0.6);">Game Over</div>
+        <div id="preview-go-score" style="color:#ff4500; font:bold 20px monospace;"></div>
+        <button id="preview-go-replay" style="background:#ff4500; color:#fff; border:none; border-radius:16px; padding:10px 28px; font:bold 14px system-ui,sans-serif; cursor:pointer;">PLAY AGAIN</button>
+        <button id="preview-go-stop" style="background:transparent; color:#888; border:1px solid #444; border-radius:16px; padding:6px 16px; font-size:12px; cursor:pointer;">back to preview</button>
+      </div>
     </div>
   `;
 
@@ -655,6 +777,16 @@ async function renderPlaying() {
   document.getElementById('restart-btn').addEventListener('click', () => {
     stopPreviewGame();
     renderPlaying();
+  });
+
+  document.getElementById('preview-go-replay')?.addEventListener('click', () => {
+    stopPreviewGame();
+    renderPlaying();
+  });
+
+  document.getElementById('preview-go-stop')?.addEventListener('click', () => {
+    state = 'preview';
+    render();
   });
 
   await startPreviewGame(version.gameCode);
@@ -795,7 +927,11 @@ async function startPreviewGame(code) {
             if (scoreEl) scoreEl.textContent = 'SCORE: ' + cmd.value;
           } else if (cmd.op === 'gameOver') {
             isGameOver = true;
-            if (scoreEl) scoreEl.textContent = 'GAME OVER - SCORE: ' + (cmd.value || '');
+            if (scoreEl) scoreEl.textContent = '';
+            const goOverlay = document.getElementById('preview-gameover');
+            const goScore = document.getElementById('preview-go-score');
+            if (goOverlay) goOverlay.style.display = 'flex';
+            if (goScore) goScore.textContent = '\u2605 ' + (cmd.value || 0) + ' \u2605';
           } else if (['tone', 'noise', 'sample', 'stop', 'stopAll', 'volume'].includes(cmd.op)) {
             audioCmds.push(cmd);
           } else {

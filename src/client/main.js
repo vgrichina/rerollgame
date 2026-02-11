@@ -8,6 +8,8 @@ import { initQuickJS, createSandbox } from './sandbox.js';
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 const scoreDisplay = document.getElementById('score-display');
+const gameOverOverlay = document.getElementById('game-over-overlay');
+const goScoreValue = document.getElementById('go-score-value');
 
 // Game state
 let sandbox = null;
@@ -16,6 +18,8 @@ let gameHeight = 400;
 let score = 0;
 let isGameOver = false;
 let imagePool = {};
+let currentGameCode = null;
+let currentGameMeta = null;
 
 // Input state
 const input = {
@@ -87,6 +91,8 @@ async function init() {
   const data = await res.json();
 
   if (data.gameCode) {
+    currentGameCode = data.gameCode;
+    currentGameMeta = data.metadata;
     await loadGame(data.gameCode, data.metadata);
   } else {
     ctx.fillStyle = '#111';
@@ -109,6 +115,7 @@ async function loadGame(code, metadata) {
   isGameOver = false;
   score = 0;
   scoreDisplay.textContent = '';
+  gameOverOverlay.classList.remove('visible');
 
   if (metadata) {
     gameWidth = metadata.width || 400;
@@ -170,7 +177,9 @@ async function loadGame(code, metadata) {
             scoreDisplay.textContent = 'SCORE: ' + score;
           } else if (cmd.op === 'gameOver') {
             isGameOver = true;
-            scoreDisplay.textContent = 'GAME OVER - SCORE: ' + score;
+            scoreDisplay.textContent = '';
+            goScoreValue.textContent = '\u2605 ' + score + ' \u2605';
+            gameOverOverlay.classList.add('visible');
           } else if (cmd.op === 'tone' || cmd.op === 'noise' || cmd.op === 'sample' || cmd.op === 'stop' || cmd.op === 'stopAll' || cmd.op === 'volume') {
             audioCmds.push(cmd);
           } else {
@@ -285,4 +294,13 @@ async function loadGeneratedImage(id, res) {
 
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
+
+// Game over overlay handlers
+document.getElementById('go-replay-btn').addEventListener('click', () => {
+  if (currentGameCode) loadGame(currentGameCode, currentGameMeta);
+});
+document.getElementById('go-back-btn').addEventListener('click', () => {
+  window.history.back();
+});
+
 init();

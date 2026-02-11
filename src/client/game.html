@@ -11,12 +11,33 @@
       #ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
       #ui-overlay > * { pointer-events: auto; }
       #score-display { position: absolute; top: 8px; right: 12px; color: #fff; font: bold 16px monospace; text-shadow: 1px 1px 2px #000; }
+      #game-over-overlay {
+        display: none;
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.75);
+        flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+        pointer-events: auto;
+        animation: fadeIn 0.4s ease-out;
+      }
+      #game-over-overlay.visible { display: flex; }
+      #game-over-overlay .go-title { color: #fff; font: bold 28px monospace; text-transform: uppercase; letter-spacing: 4px; text-shadow: 0 0 20px rgba(255,69,0,0.6); }
+      #game-over-overlay .go-score { color: #ff4500; font: bold 22px monospace; margin: 4px 0 12px; }
+      #game-over-overlay button { background: #ff4500; color: #fff; border: none; border-radius: 20px; padding: 12px 32px; font: bold 15px system-ui, sans-serif; cursor: pointer; transition: transform 0.1s; }
+      #game-over-overlay button:active { transform: scale(0.96); }
+      #game-over-overlay .go-back { background: transparent; color: #888; border: 1px solid #444; padding: 8px 20px; font-size: 13px; }
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
     <div id="ui-overlay">
       <div id="score-display"></div>
+      <div id="game-over-overlay">
+        <div class="go-title">Game Over</div>
+        <div class="go-score" id="go-score-value"></div>
+        <button id="go-replay-btn">PLAY AGAIN</button>
+        <button id="go-back-btn" class="go-back">back</button>
+      </div>
     </div>
     <script type="module" src="main.js"></script>
   </body>
