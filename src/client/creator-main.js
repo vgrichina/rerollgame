@@ -1,4 +1,7 @@
 import { navigateTo } from '@devvit/web/client';
+import { executeCommands } from './renderer.js';
+import { processAudioCommands, preloadSounds, tryResumeAudio } from './audio.js';
+import { initQuickJS, createSandbox } from './sandbox.js';
 
 const root = document.getElementById('root');
 
@@ -24,7 +27,7 @@ function buildDescription() {
 }
 
 // State
-let state = 'roll'; // roll | drafts-list | generating | preview | editing
+let state = 'roll'; // roll | drafts-list | generating | preview | playing | editing
 let drafts = [];
 let currentDraft = null;
 let currentJobId = null;
@@ -38,6 +41,11 @@ let debugExpanded = false;
 let pollCount = 0;
 let lastPollData = null;
 let generationStartTime = 0;
+
+// Preview player state
+let previewSandbox = null;
+let previewAnimFrame = null;
+let previewImagePool = {};
 
 // Initialize slots
 rollAll();
@@ -58,11 +66,15 @@ async function loadDrafts() {
 }
 
 function render() {
+  // Stop preview game loop when leaving playing state
+  if (state !== 'playing') stopPreviewGame();
+
   switch (state) {
     case 'roll': renderRoll(); break;
     case 'drafts-list': renderDraftsList(); break;
     case 'generating': renderGenerating(); break;
     case 'preview': renderPreview(); break;
+    case 'playing': renderPlaying(); break;
     case 'editing': renderEditing(); break;
   }
 }
@@ -536,8 +548,11 @@ function renderPreview() {
           <button id="next-ver" style="background:#222; color:#fff; border:1px solid #444; border-radius:8px; padding:6px 14px; font-size:13px; cursor:pointer;" ${currentVersionIndex >= versionCount - 1 ? 'disabled style="opacity:0.4; background:#222; color:#fff; border:1px solid #444; border-radius:8px; padding:6px 14px; font-size:13px; cursor:default;"' : ''}>Next</button>
         </div>
       ` : ''}
+      <button id="play-btn" style="background:#ff4500; color:#fff; border:none; border-radius:20px; padding:14px 40px; font-size:16px; font-weight:bold; cursor:pointer; margin-top:4px;">
+        PLAY
+      </button>
       <div style="display:flex; gap:8px; margin-top:8px;">
-        <button id="publish-btn" style="background:#ff4500; color:#fff; border:none; border-radius:20px; padding:12px 28px; font-size:15px; font-weight:bold; cursor:pointer;">
+        <button id="publish-btn" style="background:#222; color:#ff4500; border:1px solid #ff4500; border-radius:20px; padding:10px 24px; font-size:14px; font-weight:bold; cursor:pointer;">
           PUBLISH
         </button>
         <button id="edit-btn" style="background:transparent; color:#ff4500; border:1px solid #ff4500; border-radius:20px; padding:10px 20px; font-size:13px; cursor:pointer;">
@@ -552,6 +567,11 @@ function renderPreview() {
       </button>
     </div>
   `;
+
+  document.getElementById('play-btn').addEventListener('click', () => {
+    state = 'playing';
+    render();
+  });
 
   document.getElementById('publish-btn').addEventListener('click', publishGame);
 
@@ -588,6 +608,276 @@ function renderPreview() {
       });
     }
   }
+}
+
+// --- Playing (inline game preview) ---
+function stopPreviewGame() {
+  if (previewAnimFrame) {
+    cancelAnimationFrame(previewAnimFrame);
+    previewAnimFrame = null;
+  }
+  if (previewSandbox) {
+    previewSandbox.dispose();
+    previewSandbox = null;
+  }
+  previewImagePool = {};
+}
+
+async function renderPlaying() {
+  const versions = currentDraft?.versions || [];
+  const version = versions[currentVersionIndex];
+  if (!version?.gameCode) {
+    state = 'preview';
+    render();
+    return;
+  }
+
+  root.innerHTML = `
+    <div style="display:flex; flex-direction:column; align-items:center; height:100vh; padding:8px; gap:6px;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button id="stop-btn" style="background:#333; color:#fff; border:none; border-radius:12px; padding:6px 16px; font-size:12px; cursor:pointer;">STOP</button>
+        <span style="color:#888; font-size:12px;">${escapeHtml(version.metadata?.title || 'Untitled')}</span>
+        <button id="restart-btn" style="background:#333; color:#fff; border:none; border-radius:12px; padding:6px 16px; font-size:12px; cursor:pointer;">RESTART</button>
+      </div>
+      <div id="game-container" style="flex:1; display:flex; align-items:center; justify-content:center; width:100%; overflow:hidden; position:relative;">
+        <canvas id="preview-canvas" style="image-rendering: pixelated; background:#000;"></canvas>
+      </div>
+      <div id="preview-score" style="color:#ff4500; font-size:14px; font-weight:bold; height:20px;"></div>
+      <div id="preview-error" style="color:#f44; font-size:12px; max-width:360px; text-align:center; display:none;"></div>
+    </div>
+  `;
+
+  document.getElementById('stop-btn').addEventListener('click', () => {
+    state = 'preview';
+    render();
+  });
+
+  document.getElementById('restart-btn').addEventListener('click', () => {
+    stopPreviewGame();
+    renderPlaying();
+  });
+
+  await startPreviewGame(version.gameCode);
+}
+
+async function startPreviewGame(code) {
+  const canvas = document.getElementById('preview-canvas');
+  const container = document.getElementById('game-container');
+  const scoreEl = document.getElementById('preview-score');
+  const errorEl = document.getElementById('preview-error');
+  if (!canvas || !container) return;
+
+  const ctx = canvas.getContext('2d');
+  let gameWidth = 400;
+  let gameHeight = 400;
+  let isGameOver = false;
+
+  function resizePreviewCanvas() {
+    const maxW = container.clientWidth;
+    const maxH = container.clientHeight;
+    const scale = Math.min(maxW / gameWidth, maxH / gameHeight);
+    canvas.width = gameWidth;
+    canvas.height = gameHeight;
+    canvas.style.width = Math.floor(gameWidth * scale) + 'px';
+    canvas.style.height = Math.floor(gameHeight * scale) + 'px';
+  }
+
+  // Show loading
+  canvas.width = gameWidth;
+  canvas.height = gameHeight;
+  resizePreviewCanvas();
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, gameWidth, gameHeight);
+  ctx.fillStyle = '#666';
+  ctx.font = '16px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Loading...', gameWidth / 2, gameHeight / 2);
+
+  try {
+    await initQuickJS();
+    previewSandbox = createSandbox();
+    const { metadata, resources } = previewSandbox.loadGame(code);
+
+    if (metadata.width) gameWidth = metadata.width;
+    if (metadata.height) gameHeight = metadata.height;
+    resizePreviewCanvas();
+
+    if (resources.images) {
+      previewImagePool = await loadPreviewImages(resources.images, ctx);
+    }
+    if (resources.sounds) {
+      await preloadSounds(resources.sounds);
+    }
+
+    // Input state for this preview session
+    const input = {
+      up: false, down: false, left: false, right: false, a: false, b: false,
+      upPressed: false, downPressed: false, leftPressed: false, rightPressed: false,
+      aPressed: false, bPressed: false,
+      pointerDown: false, pointerX: 0, pointerY: 0, pointerPressed: false,
+    };
+    const prevInput = {};
+
+    const keyMap = {
+      ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+      w: 'up', s: 'down', a: 'left', d: 'right',
+      z: 'a', x: 'b', ' ': 'a',
+    };
+
+    function onKeyDown(e) {
+      const btn = keyMap[e.key];
+      if (btn) { input[btn] = true; e.preventDefault(); tryResumeAudio(); }
+    }
+    function onKeyUp(e) {
+      const btn = keyMap[e.key];
+      if (btn) { input[btn] = false; }
+    }
+    function onPointerDown(e) {
+      input.pointerDown = true;
+      updatePointer(e);
+      tryResumeAudio();
+    }
+    function onPointerMove(e) { updatePointer(e); }
+    function onPointerUp() { input.pointerDown = false; }
+
+    function updatePointer(e) {
+      const rect = canvas.getBoundingClientRect();
+      input.pointerX = (e.clientX - rect.left) * (gameWidth / rect.width);
+      input.pointerY = (e.clientY - rect.top) * (gameHeight / rect.height);
+    }
+
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+
+    // Clean up listeners when sandbox is disposed
+    const origDispose = previewSandbox.dispose.bind(previewSandbox);
+    previewSandbox.dispose = () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keyup', onKeyUp);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      origDispose();
+    };
+
+    const resizeObs = new ResizeObserver(() => resizePreviewCanvas());
+    resizeObs.observe(container);
+
+    let lastTime = performance.now();
+    function loop(now) {
+      if (isGameOver || !previewSandbox) return;
+
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      for (const key of ['up', 'down', 'left', 'right', 'a', 'b']) {
+        input[key + 'Pressed'] = input[key] && !prevInput[key];
+      }
+      input.pointerPressed = input.pointerDown && !prevInput.pointerDown;
+
+      const commands = previewSandbox.callUpdate(dt, input);
+
+      Object.assign(prevInput, input);
+      input.pointerPressed = false;
+      for (const key of ['up', 'down', 'left', 'right', 'a', 'b']) {
+        input[key + 'Pressed'] = false;
+      }
+
+      if (Array.isArray(commands)) {
+        const drawCmds = [];
+        const audioCmds = [];
+        for (const cmd of commands) {
+          if (!cmd || !cmd.op) continue;
+          if (cmd.op === 'score') {
+            if (scoreEl) scoreEl.textContent = 'SCORE: ' + cmd.value;
+          } else if (cmd.op === 'gameOver') {
+            isGameOver = true;
+            if (scoreEl) scoreEl.textContent = 'GAME OVER - SCORE: ' + (cmd.value || '');
+          } else if (['tone', 'noise', 'sample', 'stop', 'stopAll', 'volume'].includes(cmd.op)) {
+            audioCmds.push(cmd);
+          } else {
+            drawCmds.push(cmd);
+          }
+        }
+        executeCommands(ctx, drawCmds, previewImagePool);
+        processAudioCommands(audioCmds);
+      }
+
+      previewAnimFrame = requestAnimationFrame(loop);
+    }
+    previewAnimFrame = requestAnimationFrame(loop);
+  } catch (err) {
+    console.error('Preview game error:', err);
+    if (errorEl) {
+      errorEl.style.display = 'block';
+      errorEl.textContent = 'Error: ' + err.message;
+    }
+  }
+}
+
+async function loadPreviewImages(images, ctx) {
+  const pool = {};
+  for (const [id, res] of Object.entries(images)) {
+    try {
+      if (res.type === 'pixels') {
+        const offscreen = new OffscreenCanvas(res.w, res.h);
+        const offCtx = offscreen.getContext('2d');
+        const imageData = offCtx.createImageData(res.w, res.h);
+        for (let i = 0; i < res.data.length; i++) {
+          const color = res.data[i];
+          if (!color) continue;
+          const hex = color.replace('#', '');
+          imageData.data[i * 4] = parseInt(hex.substring(0, 2), 16);
+          imageData.data[i * 4 + 1] = parseInt(hex.substring(2, 4), 16);
+          imageData.data[i * 4 + 2] = parseInt(hex.substring(4, 6), 16);
+          imageData.data[i * 4 + 3] = 255;
+        }
+        offCtx.putImageData(imageData, 0, 0);
+        pool[id] = await createImageBitmap(offscreen);
+      } else if (res.type === 'hex') {
+        const offscreen = new OffscreenCanvas(res.w, res.h);
+        const offCtx = offscreen.getContext('2d');
+        const imageData = offCtx.createImageData(res.w, res.h);
+        const palette = res.palette.map(c => {
+          const hex = c.replace('#', '');
+          return [parseInt(hex.substring(0, 2), 16), parseInt(hex.substring(2, 4), 16), parseInt(hex.substring(4, 6), 16)];
+        });
+        for (let y = 0; y < res.rows.length; y++) {
+          for (let x = 0; x < res.rows[y].length; x++) {
+            const idx = parseInt(res.rows[y][x], 16);
+            if (idx === 0) continue;
+            const [r, g, b] = palette[idx] || [0, 0, 0];
+            const pi = (y * res.w + x) * 4;
+            imageData.data[pi] = r; imageData.data[pi + 1] = g; imageData.data[pi + 2] = b; imageData.data[pi + 3] = 255;
+          }
+        }
+        offCtx.putImageData(imageData, 0, 0);
+        pool[id] = await createImageBitmap(offscreen);
+      } else if (res.type === 'procedural') {
+        const offscreen = new OffscreenCanvas(res.w, res.h);
+        const offCtx = offscreen.getContext('2d');
+        executeCommands(offCtx, res.draw, {});
+        pool[id] = await createImageBitmap(offscreen);
+      } else if (res.type === 'generate') {
+        const resp = await fetch('/api/image/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: res.prompt, w: res.w || 64, h: res.h || 64 }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          const blob = await fetch(`data:image/png;base64,${data.image}`).then(r => r.blob());
+          pool[id] = await createImageBitmap(blob);
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to load preview image "${id}":`, err);
+    }
+  }
+  return pool;
 }
 
 async function publishGame() {
