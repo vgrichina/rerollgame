@@ -1288,16 +1288,28 @@ async function startPreviewGame(code) {
     canvas.style.height = Math.floor(gameHeight * scale) + 'px';
   }
 
-  // Show loading
+  // Loading progress drawn on canvas
   canvas.width = gameWidth;
   canvas.height = gameHeight;
   resizePreviewCanvas();
-  ctx.fillStyle = '#111';
-  ctx.fillRect(0, 0, gameWidth, gameHeight);
-  ctx.fillStyle = '#666';
-  ctx.font = '16px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('Loading...', gameWidth / 2, gameHeight / 2);
+
+  function drawLoading(text, progress) {
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, gameWidth, gameHeight);
+    ctx.fillStyle = '#666';
+    ctx.font = '14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, gameWidth / 2, gameHeight / 2 - 12);
+    if (progress != null) {
+      const barW = 200, barH = 6;
+      const bx = (gameWidth - barW) / 2, by = gameHeight / 2 + 8;
+      ctx.fillStyle = '#222';
+      ctx.fillRect(bx, by, barW, barH);
+      ctx.fillStyle = '#ff4500';
+      ctx.fillRect(bx, by, barW * Math.min(1, progress), barH);
+    }
+  }
+  drawLoading('Loading...', 0);
 
   try {
     await initQuickJS();
@@ -1309,9 +1321,12 @@ async function startPreviewGame(code) {
     resizePreviewCanvas();
 
     if (resources.images) {
-      previewImagePool = await loadPreviewImages(resources.images, ctx);
+      previewImagePool = await loadPreviewImages(resources.images, ctx, (loaded, total, name) => {
+        drawLoading(`Loading ${loaded}/${total}: ${name}`, loaded / total);
+      });
     }
     if (resources.sounds) {
+      drawLoading('Loading sounds...', null);
       await preloadSounds(resources.sounds);
     }
 
@@ -1464,65 +1479,85 @@ async function startPreviewGame(code) {
   }
 }
 
-async function loadPreviewImages(images, ctx) {
+async function loadPreviewImages(images, ctx, onProgress) {
   const pool = {};
-  for (const [id, res] of Object.entries(images)) {
-    try {
-      if (res.type === 'pixels') {
-        const offscreen = new OffscreenCanvas(res.w, res.h);
-        const offCtx = offscreen.getContext('2d');
-        const imageData = offCtx.createImageData(res.w, res.h);
-        for (let i = 0; i < res.data.length; i++) {
-          const color = res.data[i];
-          if (!color) continue;
-          const hex = color.replace('#', '');
-          imageData.data[i * 4] = parseInt(hex.substring(0, 2), 16);
-          imageData.data[i * 4 + 1] = parseInt(hex.substring(2, 4), 16);
-          imageData.data[i * 4 + 2] = parseInt(hex.substring(4, 6), 16);
-          imageData.data[i * 4 + 3] = 255;
-        }
-        offCtx.putImageData(imageData, 0, 0);
-        pool[id] = await createImageBitmap(offscreen);
-      } else if (res.type === 'hex') {
-        const offscreen = new OffscreenCanvas(res.w, res.h);
-        const offCtx = offscreen.getContext('2d');
-        const imageData = offCtx.createImageData(res.w, res.h);
-        const palette = res.palette.map(c => {
-          const hex = c.replace('#', '');
-          return [parseInt(hex.substring(0, 2), 16), parseInt(hex.substring(2, 4), 16), parseInt(hex.substring(4, 6), 16)];
-        });
-        for (let y = 0; y < res.rows.length; y++) {
-          for (let x = 0; x < res.rows[y].length; x++) {
-            const idx = parseInt(res.rows[y][x], 16);
-            if (idx === 0) continue;
-            const [r, g, b] = palette[idx] || [0, 0, 0];
-            const pi = (y * res.w + x) * 4;
-            imageData.data[pi] = r; imageData.data[pi + 1] = g; imageData.data[pi + 2] = b; imageData.data[pi + 3] = 255;
-          }
-        }
-        offCtx.putImageData(imageData, 0, 0);
-        pool[id] = await createImageBitmap(offscreen);
-      } else if (res.type === 'procedural') {
-        const offscreen = new OffscreenCanvas(res.w, res.h);
-        const offCtx = offscreen.getContext('2d');
-        executeCommands(offCtx, res.draw, {});
-        pool[id] = await createImageBitmap(offscreen);
-      } else if (res.type === 'generate') {
-        const resp = await fetch('/api/image/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: res.prompt, w: res.w || 64, h: res.h || 64 }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          const blob = await fetch(`data:image/png;base64,${data.image}`).then(r => r.blob());
-          pool[id] = await createImageBitmap(blob);
+  const entries = Object.entries(images);
+  const total = entries.length;
+  let loaded = 0;
+
+  function reportProgress(name) {
+    loaded++;
+    if (onProgress) onProgress(loaded, total, name);
+  }
+
+  // Decode a single image resource into an ImageBitmap
+  async function decodeImage(id, res) {
+    if (res.type === 'pixels') {
+      const offscreen = new OffscreenCanvas(res.w, res.h);
+      const offCtx = offscreen.getContext('2d');
+      const imageData = offCtx.createImageData(res.w, res.h);
+      for (let i = 0; i < res.data.length; i++) {
+        const color = res.data[i];
+        if (!color) continue;
+        const hex = color.replace('#', '');
+        imageData.data[i * 4] = parseInt(hex.substring(0, 2), 16);
+        imageData.data[i * 4 + 1] = parseInt(hex.substring(2, 4), 16);
+        imageData.data[i * 4 + 2] = parseInt(hex.substring(4, 6), 16);
+        imageData.data[i * 4 + 3] = 255;
+      }
+      offCtx.putImageData(imageData, 0, 0);
+      return createImageBitmap(offscreen);
+    } else if (res.type === 'hex') {
+      const offscreen = new OffscreenCanvas(res.w, res.h);
+      const offCtx = offscreen.getContext('2d');
+      const imageData = offCtx.createImageData(res.w, res.h);
+      const palette = res.palette.map(c => {
+        const hex = c.replace('#', '');
+        return [parseInt(hex.substring(0, 2), 16), parseInt(hex.substring(2, 4), 16), parseInt(hex.substring(4, 6), 16)];
+      });
+      for (let y = 0; y < res.rows.length; y++) {
+        for (let x = 0; x < res.rows[y].length; x++) {
+          const idx = parseInt(res.rows[y][x], 16);
+          if (idx === 0) continue;
+          const [r, g, b] = palette[idx] || [0, 0, 0];
+          const pi = (y * res.w + x) * 4;
+          imageData.data[pi] = r; imageData.data[pi + 1] = g; imageData.data[pi + 2] = b; imageData.data[pi + 3] = 255;
         }
       }
-    } catch (err) {
-      console.warn(`Failed to load preview image "${id}":`, err);
+      offCtx.putImageData(imageData, 0, 0);
+      return createImageBitmap(offscreen);
+    } else if (res.type === 'procedural') {
+      const offscreen = new OffscreenCanvas(res.w, res.h);
+      const offCtx = offscreen.getContext('2d');
+      executeCommands(offCtx, res.draw, {});
+      return createImageBitmap(offscreen);
+    } else if (res.type === 'generate') {
+      const resp = await fetch('/api/image/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: res.prompt, w: res.w || 64, h: res.h || 64 }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const blob = await fetch(`data:image/png;base64,${data.image}`).then(r => r.blob());
+        return createImageBitmap(blob);
+      }
+      return null;
     }
+    return null;
   }
+
+  // Load all images in parallel, report progress as each finishes
+  await Promise.all(entries.map(async ([id, res]) => {
+    try {
+      const bitmap = await decodeImage(id, res);
+      if (bitmap) pool[id] = bitmap;
+    } catch (err) {
+      console.warn(`Failed to load image "${id}":`, err);
+    }
+    reportProgress(id);
+  }));
+
   return pool;
 }
 

@@ -85,6 +85,12 @@ function resources() {
           '014410',
         ],
       },
+      // Moon (AI-generated at load time)
+      moon: {
+        type: 'generate',
+        prompt: 'glowing full moon in dark night sky, pixel art style, transparent background',
+        w: 48, h: 48,
+      },
       // City skyline background layer (procedural)
       skyline: {
         type: 'procedural', w: 400, h: 200,
@@ -326,6 +332,9 @@ function update(deltaTime, input) {
     const bright = (i % 3 === 0) ? '#ffffff' : '#666688';
     cmds.push({ op: 'rect', x: sx, y: sy, w: 1, h: 1, fill: bright });
   }
+
+  // Moon (AI-generated image)
+  cmds.push({ op: 'img', id: 'moon', x: 320, y: 30, w: 48, h: 48 });
 
   // Parallax city skyline
   const skyX = -Math.floor(s.skyOffset);
