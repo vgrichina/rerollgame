@@ -1537,12 +1537,17 @@ async function loadPreviewImages(images, ctx, onProgress) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: res.prompt, w: res.w || 64, h: res.h || 64 }),
       });
-      if (resp.ok) {
-        const data = await resp.json();
-        const blob = await fetch(`data:image/png;base64,${data.image}`).then(r => r.blob());
-        return createImageBitmap(blob);
+      const data = await resp.json();
+      if (!resp.ok) {
+        console.warn(`Image generate "${id}" failed:`, data.error);
+        return null;
       }
-      return null;
+      if (!data.image) {
+        console.warn(`Image generate "${id}": no image data in response`);
+        return null;
+      }
+      const blob = await fetch(`data:image/png;base64,${data.image}`).then(r => r.blob());
+      return createImageBitmap(blob);
     }
     return null;
   }
@@ -1554,6 +1559,7 @@ async function loadPreviewImages(images, ctx, onProgress) {
       if (bitmap) pool[id] = bitmap;
     } catch (err) {
       console.warn(`Failed to load image "${id}":`, err);
+      addConsoleLog('error', `Image "${id}": ${err.message}`);
     }
     reportProgress(id);
   }));

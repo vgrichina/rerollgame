@@ -363,21 +363,32 @@ api.post('/image/generate', async (c) => {
 
   if (!prompt) return c.json({ error: 'Prompt is required' }, 400);
 
+  console.log(`[img] Request: "${prompt.slice(0, 60)}" ${w}x${h}`);
+
   const cacheKey = `img:${simpleHash(prompt + w + h)}`;
   const cached = await redis.get(cacheKey);
-  if (cached) return c.json({ image: cached });
+  if (cached) {
+    console.log(`[img] Cache hit (${(cached.length / 1024).toFixed(0)}KB)`);
+    return c.json({ image: cached });
+  }
 
   try {
     const geminiKey = await settings.get('geminiKey');
-    if (!geminiKey) return c.json({ error: 'Gemini API key not configured' }, 500);
+    if (!geminiKey) {
+      console.error('[img] No geminiKey in settings');
+      return c.json({ error: 'Gemini API key not configured' }, 500);
+    }
 
+    console.log('[img] Calling Gemini...');
+    const t0 = Date.now();
     const imageData = await geminiImage(geminiKey, prompt, { w: w || 256, h: h || 256 });
+    console.log(`[img] Generated in ${((Date.now() - t0) / 1000).toFixed(1)}s (${(imageData.length / 1024).toFixed(0)}KB)`);
 
     await redis.set(cacheKey, imageData, { EX: 30 * 24 * 60 * 60 });
 
     return c.json({ image: imageData });
   } catch (err) {
-    console.error('Image generation error:', err);
+    console.error('[img] Error:', err.message);
     return c.json({ error: err.message }, 500);
   }
 });

@@ -1,8 +1,9 @@
-// Gemini API client for image generation
+// Gemini API client for image generation (Nano Banana)
 
 export async function generateImage(apiKey, prompt, options = {}) {
   const { w = 256, h = 256 } = options;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+  const model = 'gemini-2.5-flash-image';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const resp = await fetch(url, {
     method: 'POST',
@@ -26,10 +27,11 @@ export async function generateImage(apiKey, prompt, options = {}) {
   const parts = data.candidates?.[0]?.content?.parts;
   if (!parts) throw new Error('Gemini image returned empty response');
 
-  // Find the image part
+  // Find the image part (API uses snake_case: inline_data)
   for (const part of parts) {
-    if (part.inlineData) {
-      return part.inlineData.data; // base64 image data
+    const img = part.inlineData || part.inline_data;
+    if (img) {
+      return img.data; // base64 image data
     }
   }
   throw new Error('No image data in Gemini response');
