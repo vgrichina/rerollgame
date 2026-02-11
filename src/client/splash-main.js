@@ -27,26 +27,26 @@ function renderStarter() {
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:16px; padding:20px;">
       <div style="display:flex; gap:8px; margin-bottom:4px;">
-        <div class="slot-teaser" style="width:48px; height:48px; background:#141414; border:1px solid #2a2a2a; border-radius:10px; display:flex; align-items:center; justify-content:center; box-shadow:inset 0 2px 6px rgba(0,0,0,0.5); animation:slotPulse 2s ease-in-out infinite;">
-          <span style="color:#ff4500; font-size:20px; font-weight:bold;">?</span>
+        <div class="slot-teaser" style="width:48px; height:48px; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; display:flex; align-items:center; justify-content:center; box-shadow:inset 0 2px 6px rgba(0,0,0,0.5); animation:slotPulse 2s ease-in-out infinite;">
+          <span style="color:var(--primary); font-size:20px; font-weight:bold;">?</span>
         </div>
-        <div class="slot-teaser" style="width:48px; height:48px; background:#141414; border:1px solid #2a2a2a; border-radius:10px; display:flex; align-items:center; justify-content:center; box-shadow:inset 0 2px 6px rgba(0,0,0,0.5); animation:slotPulse 2s ease-in-out 0.3s infinite;">
-          <span style="color:#ff4500; font-size:20px; font-weight:bold;">?</span>
+        <div class="slot-teaser" style="width:48px; height:48px; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; display:flex; align-items:center; justify-content:center; box-shadow:inset 0 2px 6px rgba(0,0,0,0.5); animation:slotPulse 2s ease-in-out 0.3s infinite;">
+          <span style="color:var(--primary); font-size:20px; font-weight:bold;">?</span>
         </div>
-        <div class="slot-teaser" style="width:48px; height:48px; background:#141414; border:1px solid #2a2a2a; border-radius:10px; display:flex; align-items:center; justify-content:center; box-shadow:inset 0 2px 6px rgba(0,0,0,0.5); animation:slotPulse 2s ease-in-out 0.6s infinite;">
-          <span style="color:#ff4500; font-size:20px; font-weight:bold;">?</span>
+        <div class="slot-teaser" style="width:48px; height:48px; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; display:flex; align-items:center; justify-content:center; box-shadow:inset 0 2px 6px rgba(0,0,0,0.5); animation:slotPulse 2s ease-in-out 0.6s infinite;">
+          <span style="color:var(--primary); font-size:20px; font-weight:bold;">?</span>
         </div>
       </div>
-      <h1 style="font-size:22px; font-weight:bold; color:#ff4500;">rerollgame</h1>
-      <p style="color:#888; font-size:13px; text-align:center; max-width:300px;">
+      <h1 class="logo-mark" style="font-size:22px; color:var(--primary);">rerollgame</h1>
+      <p style="color:var(--text-2); font-size:13px; text-align:center; max-width:300px;">
         Roll your own AI-powered game
       </p>
-      <button id="create-btn" style="background:#ff4500; color:#fff; border:none; border-radius:24px; padding:14px 40px; font-size:17px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">
+      <button id="create-btn" style="background:var(--primary); color:var(--text-1); border:none; border-radius:24px; padding:14px 40px; font-size:17px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">
         CREATE
       </button>
     </div>
     <style>
-      @keyframes slotPulse { 0%,100% { border-color:#2a2a2a; } 50% { border-color:#ff450044; } }
+      @keyframes slotPulse { 0%,100% { border-color:var(--border); } 50% { border-color:var(--primary-glow); } }
       #create-btn:active { transform: scale(0.96); }
     </style>
   `;
@@ -62,10 +62,10 @@ function renderGame() {
 
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:12px; padding:20px;">
-      <h1 style="font-size:22px; font-weight:bold; color:#ff4500;">rerollgame</h1>
-      <h2 style="font-size:18px; font-weight:600; color:#fff;">${escapeHtml(title)}</h2>
-      ${desc ? `<p style="color:#aaa; font-size:13px; text-align:center; max-width:300px;">${escapeHtml(desc)}</p>` : ''}
-      <button id="play-btn" style="background:#ff4500; color:#fff; border:none; border-radius:24px; padding:14px 40px; font-size:17px; font-weight:bold; cursor:pointer; margin-top:8px;">
+      <h1 class="logo-mark" style="font-size:22px; color:var(--primary);">rerollgame</h1>
+      <h2 style="font-size:18px; font-weight:600; color:var(--text-1);">${escapeHtml(title)}</h2>
+      ${desc ? `<p style="color:var(--text-2); font-size:13px; text-align:center; max-width:300px;">${escapeHtml(desc)}</p>` : ''}
+      <button id="play-btn" style="background:var(--primary); color:var(--text-1); border:none; border-radius:24px; padding:14px 40px; font-size:17px; font-weight:bold; cursor:pointer; margin-top:8px;">
         PLAY
       </button>
     </div>

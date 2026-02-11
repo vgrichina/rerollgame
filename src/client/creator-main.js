@@ -28,6 +28,8 @@ function buildDescription() {
 
 // State
 let state = 'roll'; // roll | drafts-list | generating | preview | playing | editing
+let prevState = null;
+let isTumbling = false;
 let drafts = [];
 let currentDraft = null;
 let currentJobId = null;
@@ -65,18 +67,95 @@ async function loadDrafts() {
   }
 }
 
+// --- Transition helper (R4) ---
+function transitionTo(renderFn) {
+  root.style.opacity = '0';
+  setTimeout(() => {
+    renderFn();
+    root.style.opacity = '1';
+  }, 150);
+}
+
 function render() {
   // Stop preview game loop when leaving playing state
   if (state !== 'playing') stopPreviewGame();
 
-  switch (state) {
-    case 'roll': renderRoll(); break;
-    case 'drafts-list': renderDraftsList(); break;
-    case 'generating': renderGenerating(); break;
-    case 'preview': renderPreview(); break;
-    case 'playing': renderPlaying(); break;
-    case 'editing': renderEditing(); break;
+  const stateChanged = prevState !== null && prevState !== state;
+  prevState = state;
+
+  const doRender = () => {
+    switch (state) {
+      case 'roll': renderRoll(); break;
+      case 'drafts-list': renderDraftsList(); break;
+      case 'generating': renderGenerating(); break;
+      case 'preview': renderPreview(); break;
+      case 'playing': renderPlaying(); break;
+      case 'editing': renderEditing(); break;
+    }
+  };
+
+  if (stateChanged) {
+    transitionTo(doRender);
+  } else {
+    doRender();
   }
+}
+
+// --- Slot tumble animation (R5) ---
+function tumbleSlot(slotEl, key, finalValue, delay) {
+  const NUM_FILLERS = 5;
+  const textEl = slotEl.querySelector('.slot-text');
+  const rerollIcon = slotEl.querySelector('.slot-reroll');
+  if (!textEl) return;
+
+  const fillers = [];
+  for (let i = 0; i < NUM_FILLERS; i++) {
+    fillers.push(pickRandom(SLOTS[key]));
+  }
+
+  const containerHeight = slotEl.offsetHeight;
+
+  // Prepare container
+  slotEl.style.position = 'relative';
+  slotEl.style.overflow = 'hidden';
+  slotEl.style.height = containerHeight + 'px';
+
+  // Hide original content
+  if (rerollIcon) rerollIcon.style.opacity = '0';
+  textEl.style.opacity = '0';
+
+  // Build reel
+  const items = [...fillers, finalValue];
+  const reel = document.createElement('div');
+  reel.style.cssText = `position:absolute; top:0; left:0; width:100%; padding:0 16px;`;
+
+  items.forEach(val => {
+    const item = document.createElement('div');
+    item.style.cssText = `height:${containerHeight}px; display:flex; align-items:center; font-size:15px; color:var(--text-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;`;
+    item.textContent = val;
+    reel.appendChild(item);
+  });
+
+  slotEl.appendChild(reel);
+
+  const cleanup = () => {
+    if (!reel.parentNode) return;
+    reel.remove();
+    textEl.textContent = finalValue;
+    textEl.style.opacity = '';
+    if (rerollIcon) rerollIcon.style.opacity = '';
+    slotEl.style.position = '';
+    slotEl.style.overflow = '';
+    slotEl.style.height = '';
+  };
+
+  setTimeout(() => {
+    const targetY = -(items.length - 1) * containerHeight;
+    reel.style.transition = 'transform 0.6s cubic-bezier(0.2, 0.8, 0.3, 1)';
+    reel.style.transform = `translateY(${targetY}px)`;
+    reel.addEventListener('transitionend', cleanup, { once: true });
+    setTimeout(cleanup, 800); // fallback
+  }, delay);
 }
 
 // --- Drafts List ---
@@ -93,39 +172,39 @@ function renderDraftsList() {
     const statusDot = d.status === 'generating'
       ? '<span style="width:8px; height:8px; border-radius:50%; background:#f90; display:inline-block; animation:pulse 1.5s ease-in-out infinite;"></span>'
       : d.status === 'published'
-        ? '<span style="width:8px; height:8px; border-radius:50%; background:#39ff14; display:inline-block;"></span>'
-        : '<span style="width:8px; height:8px; border-radius:50%; background:#444; display:inline-block;"></span>';
+        ? `<span style="width:8px; height:8px; border-radius:50%; background:var(--accent-green); display:inline-block;"></span>`
+        : `<span style="width:8px; height:8px; border-radius:50%; background:var(--border-light); display:inline-block;"></span>`;
     const statusText = d.status === 'generating' ? 'generating' : d.status === 'published' ? 'published' : 'draft';
-    const borderColor = d.status === 'generating' ? '#f90' : d.status === 'published' ? '#39ff14' : '#2a2a2a';
+    const borderColor = d.status === 'generating' ? '#f90' : d.status === 'published' ? 'var(--accent-green)' : 'var(--border)';
     return `
-      <div class="draft-item" data-id="${d.id}" style="display:flex; align-items:center; gap:12px; padding:12px 14px; background:#111; border-radius:10px; cursor:pointer; border:1px solid #2a2a2a; border-left:3px solid ${borderColor}; transition:background 0.15s;">
-        <div style="width:44px; height:44px; background:#1a1a1a; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:inset 0 1px 4px rgba(0,0,0,0.4);">
-          <span style="font-size:18px; color:#555;">${genre ? '&#127918;' : '&#9776;'}</span>
+      <div class="draft-item" data-id="${d.id}" style="display:flex; align-items:center; gap:12px; padding:12px 14px; background:var(--surface-1); border-radius:10px; cursor:pointer; border:1px solid var(--border); border-left:3px solid ${borderColor}; transition:background 0.15s;">
+        <div style="width:44px; height:44px; background:var(--surface-2); border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:inset 0 1px 4px rgba(0,0,0,0.4);">
+          <span style="font-size:18px; color:var(--text-3);">${genre ? '&#127918;' : '&#9776;'}</span>
         </div>
         <div style="flex:1; min-width:0;">
-          <div style="font-size:14px; font-weight:600; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.title || 'Untitled')}</div>
+          <div style="font-size:14px; font-weight:600; color:var(--text-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.title || 'Untitled')}</div>
           <div style="display:flex; align-items:center; gap:6px; margin-top:3px;">
-            ${genre ? `<span style="font-size:10px; color:#888; background:#1a1a1a; border:1px solid #333; border-radius:4px; padding:1px 6px;">${escapeHtml(genre)}</span>` : ''}
-            <span style="display:flex; align-items:center; gap:4px; font-size:10px; color:#666;">${statusDot} ${statusText}</span>
+            ${genre ? `<span style="font-size:10px; color:var(--text-2); background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:1px 6px;">${escapeHtml(genre)}</span>` : ''}
+            <span style="display:flex; align-items:center; gap:4px; font-size:10px; color:var(--text-3);">${statusDot} ${statusText}</span>
           </div>
         </div>
-        <button class="delete-draft" data-id="${d.id}" style="background:none; border:none; color:#444; font-size:14px; cursor:pointer; padding:6px; flex-shrink:0; transition:color 0.15s;">&times;</button>
+        <button class="delete-draft" data-id="${d.id}" style="background:none; border:none; color:var(--border-light); font-size:14px; cursor:pointer; padding:6px; flex-shrink:0; transition:color 0.15s;">&times;</button>
       </div>`;
   }).join('');
 
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; height:100vh; padding:16px; gap:10px;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h1 style="font-size:18px; font-weight:bold; color:#fff;">My Games</h1>
-        <button id="new-game-btn" style="background:#ff4500; color:#fff; border:none; border-radius:10px; padding:8px 16px; font-size:13px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">+ New</button>
+        <h1 style="font-size:18px; font-weight:bold; color:var(--text-1);">My Games</h1>
+        <button id="new-game-btn" style="background:var(--primary); color:var(--text-1); border:none; border-radius:10px; padding:8px 16px; font-size:13px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">+ New</button>
       </div>
       <div style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
-        ${drafts.length > 0 ? draftItems : '<p style="color:#555; text-align:center; margin-top:40px; font-size:14px;">No games yet</p>'}
+        ${drafts.length > 0 ? draftItems : '<p style="color:var(--text-3); text-align:center; margin-top:40px; font-size:14px;">No games yet</p>'}
       </div>
     </div>
     <style>
-      .draft-item:hover { background: #181818 !important; }
-      .delete-draft:hover { color: #f44 !important; }
+      .draft-item:hover { background: var(--surface-2) !important; }
+      .delete-draft:hover { color: var(--error) !important; }
       #new-game-btn:active { transform: scale(0.96); }
       @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
     </style>
@@ -194,66 +273,61 @@ async function resumeDraft(draftId) {
 function renderRoll() {
   const slotRows = SLOT_KEYS.map(key => `
     <div style="width:100%; max-width:360px;">
-      <div style="color:#666; font-size:10px; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:4px; padding-left:2px;">${SLOT_LABELS[key]}</div>
-      <div class="slot-value" data-key="${key}" style="background:#111; border:1px solid #2a2a2a; border-radius:10px; padding:12px 16px; color:#fff; font-size:15px; cursor:pointer; user-select:none; box-shadow:inset 0 2px 8px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.04); display:flex; justify-content:space-between; align-items:center; transition:background 0.15s, border-color 0.15s;">
+      <div style="color:var(--text-3); font-size:10px; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:4px; padding-left:2px;">${SLOT_LABELS[key]}</div>
+      <div class="slot-value" data-key="${key}" style="background:var(--surface-1); border:1px solid var(--border); border-radius:10px; padding:12px 16px; color:var(--text-1); font-size:15px; cursor:pointer; user-select:none; box-shadow:inset 0 2px 8px rgba(0,0,0,0.5), inset 0 -1px 0 rgba(255,255,255,0.04); display:flex; justify-content:space-between; align-items:center; transition:background 0.15s, border-color 0.15s;">
         <span class="slot-text">${escapeHtml(slotValues[key])}</span>
-        <span style="color:#555; font-size:13px;">&#8635;</span>
+        <span class="slot-reroll" style="color:var(--text-3); font-size:13px;">&#8635;</span>
       </div>
     </div>
   `).join('');
 
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:12px; padding:20px;">
-      <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">rerollgame</h1>
+      <h1 class="logo-mark" style="font-size:20px; color:var(--primary);">rerollgame</h1>
       <div style="display:flex; flex-direction:column; gap:10px; width:100%; align-items:center;">
         ${slotRows}
       </div>
       <div style="display:flex; gap:10px; margin-top:12px;">
-        <button id="roll-all-btn" style="background:#1a1a1a; color:#ff4500; border:1px solid #ff4500; border-radius:20px; padding:11px 28px; font-size:14px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">
+        <button id="roll-all-btn" style="background:var(--surface-2); color:var(--primary); border:1px solid var(--primary); border-radius:20px; padding:11px 28px; font-size:14px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">
           ROLL
         </button>
-        <button id="generate-btn" style="background:#ff4500; color:#fff; border:none; border-radius:20px; padding:11px 28px; font-size:14px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">
+        <button id="generate-btn" style="background:var(--primary); color:var(--text-1); border:none; border-radius:20px; padding:11px 28px; font-size:14px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">
           GENERATE
         </button>
       </div>
-      <button id="drafts-btn" style="background:transparent; color:#888; border:none; font-size:13px; cursor:pointer; text-decoration:underline;">
+      <button id="drafts-btn" style="background:transparent; color:var(--text-2); border:none; font-size:13px; cursor:pointer; text-decoration:underline;">
         My drafts${drafts.length > 0 ? ` (${drafts.length})` : ''}
       </button>
     </div>
     <style>
-      .slot-value:hover { background: #181818 !important; border-color: #444 !important; }
+      .slot-value:hover { background: var(--surface-2) !important; border-color: var(--border-light) !important; }
       .slot-value:active { transform: scale(0.98); }
-      .slot-spin .slot-text { animation: slotSpin 0.3s ease-out; display:inline-block; }
-      @keyframes slotSpin { 0% { opacity:0; transform:translateY(-12px); } 100% { opacity:1; transform:translateY(0); } }
       #roll-all-btn:active, #generate-btn:active { transform: scale(0.96); }
     </style>
   `;
 
-  // Tap individual slot to re-roll
+  // Tap individual slot to re-roll with tumble
   root.querySelectorAll('.slot-value').forEach(el => {
     el.addEventListener('click', () => {
+      if (isTumbling) return;
+      isTumbling = true;
       const key = el.dataset.key;
       rollOne(key);
-      const textEl = el.querySelector('.slot-text');
-      if (textEl) textEl.textContent = slotValues[key];
-      el.classList.remove('slot-spin');
-      void el.offsetWidth; // reflow
-      el.classList.add('slot-spin');
+      tumbleSlot(el, key, slotValues[key], 0);
+      setTimeout(() => { isTumbling = false; }, 700);
     });
   });
 
-  // Roll all with staggered animation
+  // Roll all with staggered tumble animation
   document.getElementById('roll-all-btn').addEventListener('click', () => {
+    if (isTumbling) return;
+    isTumbling = true;
     rollAll();
-    root.querySelectorAll('.slot-value').forEach((el, i) => {
-      setTimeout(() => {
-        const textEl = el.querySelector('.slot-text');
-        if (textEl) textEl.textContent = slotValues[el.dataset.key];
-        el.classList.remove('slot-spin');
-        void el.offsetWidth;
-        el.classList.add('slot-spin');
-      }, i * 100);
+    const slots = root.querySelectorAll('.slot-value');
+    slots.forEach((el, i) => {
+      tumbleSlot(el, el.dataset.key, slotValues[el.dataset.key], i * 100);
     });
+    setTimeout(() => { isTumbling = false; }, (slots.length - 1) * 100 + 700);
   });
 
   // Generate from current slots
@@ -362,36 +436,36 @@ function getGenerationSteps() {
 function renderGenerating() {
   const elapsed = generationStartTime ? Math.round((Date.now() - generationStartTime) / 1000) : 0;
   const steps = getGenerationSteps();
-  const debugLines = debugLog.slice(-20).map(l => `<div style="color:#888; font-size:10px; font-family:monospace; white-space:pre-wrap;">[${l.time}] ${escapeHtml(l.msg)}</div>`).join('');
+  const debugLines = debugLog.slice(-20).map(l => `<div style="color:var(--text-2); font-size:10px; font-family:monospace; white-space:pre-wrap;">[${l.time}] ${escapeHtml(l.msg)}</div>`).join('');
 
   const stepsHtml = steps.map((step, i) => {
     const done = progressValue >= step.threshold;
     const active = !done && (i === 0 || progressValue >= steps[i - 1].threshold);
-    const icon = done ? '<span style="color:#39ff14;">&#10003;</span>' : active ? '<span class="gen-spinner">&#9697;</span>' : '<span style="color:#444;">&#9675;</span>';
-    const color = done ? '#39ff14' : active ? '#fff' : '#555';
+    const icon = done ? '<span style="color:var(--accent-green);">&#10003;</span>' : active ? '<span class="gen-spinner">&#9697;</span>' : '<span style="color:var(--border-light);">&#9675;</span>';
+    const color = done ? 'var(--accent-green)' : active ? 'var(--text-1)' : 'var(--text-3)';
     return `<div style="display:flex; align-items:center; gap:10px; padding:6px 0; color:${color}; font-size:13px; transition:color 0.3s;">${icon} ${escapeHtml(step.label)}</div>`;
   }).join('');
 
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:16px; padding:20px;">
-      <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">Building your game</h1>
+      <h1 style="font-size:20px; color:var(--primary);">Building your game</h1>
       <div style="width:80%; max-width:300px;">
         <div id="gen-steps">${stepsHtml}</div>
       </div>
-      <div style="width:80%; max-width:300px; height:6px; background:#222; border-radius:3px; overflow:hidden; margin-top:4px;">
-        <div id="progress-bar" style="height:100%; background:linear-gradient(90deg, #ff4500, #ff6a33); border-radius:3px; transition:width 0.5s; width:${progressValue}%;"></div>
+      <div style="width:80%; max-width:300px; height:6px; background:var(--surface-3); border-radius:3px; overflow:hidden; margin-top:4px;">
+        <div id="progress-bar" style="height:100%; background:linear-gradient(90deg, var(--primary), #ff6a33); border-radius:3px; transition:width 0.5s; width:${progressValue}%;"></div>
       </div>
-      <p id="progress-text" style="color:#555; font-size:11px;">${progressValue}%</p>
+      <p id="progress-text" style="color:var(--text-3); font-size:11px;">${progressValue}%</p>
       <div style="display:flex; gap:12px; align-items:center;">
-        <button id="cancel-btn" style="background:transparent; color:#888; border:1px solid #444; border-radius:16px; padding:6px 16px; font-size:12px; cursor:pointer;">Cancel</button>
-        <button id="debug-toggle" style="background:transparent; color:#555; border:none; font-size:11px; cursor:pointer; text-decoration:underline;">
+        <button id="cancel-btn" style="background:transparent; color:var(--text-2); border:1px solid var(--border-light); border-radius:16px; padding:6px 16px; font-size:12px; cursor:pointer;">Cancel</button>
+        <button id="debug-toggle" style="background:transparent; color:var(--text-3); border:none; font-size:11px; cursor:pointer; text-decoration:underline;">
           ${debugExpanded ? 'Hide' : 'Show'} Debug
         </button>
       </div>
       <div style="width:100%; max-width:400px;">
-        <div id="debug-panel" style="display:${debugExpanded ? 'block' : 'none'}; margin-top:8px; padding:10px; background:#111; border:1px solid #333; border-radius:8px; max-height:300px; overflow-y:auto;">
-          <div style="font-size:11px; color:#ff4500; font-weight:600; margin-bottom:6px;">Job Debug</div>
-          <div style="font-size:10px; color:#aaa; font-family:monospace; margin-bottom:8px;">
+        <div id="debug-panel" style="display:${debugExpanded ? 'block' : 'none'}; margin-top:8px; padding:10px; background:var(--surface-1); border:1px solid var(--border); border-radius:8px; max-height:300px; overflow-y:auto;">
+          <div style="font-size:11px; color:var(--primary); font-weight:600; margin-bottom:6px;">Job Debug</div>
+          <div style="font-size:10px; color:var(--text-2); font-family:monospace; margin-bottom:8px;">
             jobId: ${currentJobId || 'n/a'}<br>
             polls: ${pollCount} | errors: ${pollErrors}<br>
             elapsed: ${elapsed}s<br>
@@ -400,22 +474,22 @@ function renderGenerating() {
             openaiStatus: ${lastPollData?.debug?.openaiStatus || 'n/a'}<br>
             serverElapsed: ${lastPollData?.debug?.elapsed ? Math.round(lastPollData.debug.elapsed / 1000) + 's' : 'n/a'}
           </div>
-          <div style="font-size:11px; color:#ff4500; font-weight:600; margin-bottom:4px;">Log</div>
-          ${debugLines || '<div style="color:#666; font-size:10px;">No events yet</div>'}
-          <div style="margin-top:8px; border-top:1px solid #333; padding-top:8px;">
-            <div style="font-size:11px; color:#ff4500; font-weight:600; margin-bottom:4px;">Lookup Job by ID</div>
+          <div style="font-size:11px; color:var(--primary); font-weight:600; margin-bottom:4px;">Log</div>
+          ${debugLines || '<div style="color:var(--text-3); font-size:10px;">No events yet</div>'}
+          <div style="margin-top:8px; border-top:1px solid var(--border); padding-top:8px;">
+            <div style="font-size:11px; color:var(--primary); font-weight:600; margin-bottom:4px;">Lookup Job by ID</div>
             <div style="display:flex; gap:4px;">
-              <input id="debug-job-input" type="text" placeholder="paste job ID" style="flex:1; background:#1a1a1a; border:1px solid #444; border-radius:4px; padding:4px 6px; color:#fff; font-size:10px; font-family:monospace;">
-              <button id="debug-lookup-btn" style="background:#333; color:#fff; border:none; border-radius:4px; padding:4px 8px; font-size:10px; cursor:pointer;">Lookup</button>
+              <input id="debug-job-input" type="text" placeholder="paste job ID" style="flex:1; background:var(--surface-2); border:1px solid var(--border-light); border-radius:4px; padding:4px 6px; color:var(--text-1); font-size:10px; font-family:monospace;">
+              <button id="debug-lookup-btn" style="background:var(--surface-3); color:var(--text-1); border:none; border-radius:4px; padding:4px 8px; font-size:10px; cursor:pointer;">Lookup</button>
             </div>
-            <pre id="debug-lookup-result" style="color:#aaa; font-size:10px; font-family:monospace; white-space:pre-wrap; margin-top:4px; max-height:150px; overflow-y:auto;"></pre>
+            <pre id="debug-lookup-result" style="color:var(--text-2); font-size:10px; font-family:monospace; white-space:pre-wrap; margin-top:4px; max-height:150px; overflow-y:auto;"></pre>
           </div>
         </div>
       </div>
     </div>
     <style>
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      .gen-spinner { display:inline-block; animation: spin 1s linear infinite; color: #ff4500; }
+      .gen-spinner { display:inline-block; animation: spin 1s linear infinite; color: var(--primary); }
     </style>
   `;
 
@@ -515,8 +589,8 @@ async function pollJob() {
         stepsEl.innerHTML = steps.map((step, i) => {
           const done = progressValue >= step.threshold;
           const active = !done && (i === 0 || progressValue >= steps[i - 1].threshold);
-          const icon = done ? '<span style="color:#39ff14;">&#10003;</span>' : active ? '<span class="gen-spinner">&#9697;</span>' : '<span style="color:#444;">&#9675;</span>';
-          const color = done ? '#39ff14' : active ? '#fff' : '#555';
+          const icon = done ? '<span style="color:var(--accent-green);">&#10003;</span>' : active ? '<span class="gen-spinner">&#9697;</span>' : '<span style="color:var(--border-light);">&#9675;</span>';
+          const color = done ? 'var(--accent-green)' : active ? 'var(--text-1)' : 'var(--text-3)';
           return `<div style="display:flex; align-items:center; gap:10px; padding:6px 0; color:${color}; font-size:13px; transition:color 0.3s;">${icon} ${escapeHtml(step.label)}</div>`;
         }).join('');
       }
@@ -602,29 +676,29 @@ async function renderPreview() {
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; height:100vh; padding:16px; gap:10px;">
       <div style="display:flex; align-items:center; justify-content:space-between; width:100%; max-width:360px;">
-        <h2 style="font-size:16px; font-weight:600; color:#fff; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(title)}</h2>
+        <h2 style="font-size:16px; font-weight:600; color:var(--text-1); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(title)}</h2>
         ${versionLabel ? `<div style="display:flex; align-items:center; gap:6px;">
-          <span style="color:#555; font-size:12px;">${versionLabel}</span>
+          <span style="color:var(--text-3); font-size:12px;">${versionLabel}</span>
           ${versionCount > 1 ? `
-            <button id="prev-ver" style="background:#222; color:#fff; border:1px solid #333; border-radius:6px; padding:2px 8px; font-size:12px; cursor:pointer; ${currentVersionIndex <= 0 ? 'opacity:0.3; cursor:default;' : ''}">&lsaquo;</button>
-            <button id="next-ver" style="background:#222; color:#fff; border:1px solid #333; border-radius:6px; padding:2px 8px; font-size:12px; cursor:pointer; ${currentVersionIndex >= versionCount - 1 ? 'opacity:0.3; cursor:default;' : ''}">&rsaquo;</button>
+            <button id="prev-ver" style="background:var(--surface-3); color:var(--text-1); border:1px solid var(--border); border-radius:6px; padding:2px 8px; font-size:12px; cursor:pointer; ${currentVersionIndex <= 0 ? 'opacity:0.3; cursor:default;' : ''}">&lsaquo;</button>
+            <button id="next-ver" style="background:var(--surface-3); color:var(--text-1); border:1px solid var(--border); border-radius:6px; padding:2px 8px; font-size:12px; cursor:pointer; ${currentVersionIndex >= versionCount - 1 ? 'opacity:0.3; cursor:default;' : ''}">&rsaquo;</button>
           ` : ''}
         </div>` : ''}
       </div>
       <div id="preview-thumb-container" style="flex:1; width:100%; max-width:360px; display:flex; align-items:center; justify-content:center; position:relative; cursor:pointer; border-radius:12px; overflow:hidden; background:#000; min-height:200px;">
         <canvas id="preview-thumb" style="image-rendering:pixelated; max-width:100%; max-height:100%; object-fit:contain;"></canvas>
         <div id="play-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.35); transition:background 0.2s;">
-          <div style="width:56px; height:56px; background:rgba(255,69,0,0.9); border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 20px rgba(255,69,0,0.4);">
-            <div style="width:0; height:0; border-style:solid; border-width:10px 0 10px 18px; border-color:transparent transparent transparent #fff; margin-left:3px;"></div>
+          <div style="width:56px; height:56px; background:rgba(255,69,0,0.9); border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 20px var(--primary-glow);">
+            <div style="width:0; height:0; border-style:solid; border-width:10px 0 10px 18px; border-color:transparent transparent transparent var(--text-1); margin-left:3px;"></div>
           </div>
         </div>
       </div>
       <div style="display:flex; gap:8px; width:100%; max-width:360px; justify-content:center;">
-        <button id="publish-btn" style="flex:1; background:#1a1a1a; color:#ff4500; border:1px solid #ff4500; border-radius:12px; padding:10px; font-size:13px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">PUBLISH</button>
-        <button id="edit-btn" style="flex:1; background:#1a1a1a; color:#aaa; border:1px solid #333; border-radius:12px; padding:10px; font-size:13px; cursor:pointer; transition:transform 0.1s;">EDIT</button>
-        <button id="reroll-btn" style="width:44px; background:#1a1a1a; color:#666; border:1px solid #333; border-radius:12px; padding:10px; font-size:15px; cursor:pointer; transition:transform 0.1s;" title="Reroll">&#8635;</button>
+        <button id="publish-btn" style="flex:1; background:var(--surface-2); color:var(--primary); border:1px solid var(--primary); border-radius:12px; padding:10px; font-size:13px; font-weight:bold; cursor:pointer; transition:transform 0.1s;">PUBLISH</button>
+        <button id="edit-btn" style="flex:1; background:var(--surface-2); color:var(--text-2); border:1px solid var(--border); border-radius:12px; padding:10px; font-size:13px; cursor:pointer; transition:transform 0.1s;">EDIT</button>
+        <button id="reroll-btn" style="width:44px; background:var(--surface-2); color:var(--text-3); border:1px solid var(--border); border-radius:12px; padding:10px; font-size:15px; cursor:pointer; transition:transform 0.1s;" title="Reroll">&#8635;</button>
       </div>
-      <button id="back-btn" style="background:transparent; color:#666; border:none; font-size:12px; cursor:pointer; text-decoration:underline;">
+      <button id="back-btn" style="background:transparent; color:var(--text-3); border:none; font-size:12px; cursor:pointer; text-decoration:underline;">
         drafts
       </button>
     </div>
@@ -751,20 +825,20 @@ async function renderPlaying() {
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; height:100vh; padding:8px; gap:6px;">
       <div style="display:flex; align-items:center; gap:12px;">
-        <button id="stop-btn" style="background:#333; color:#fff; border:none; border-radius:12px; padding:6px 16px; font-size:12px; cursor:pointer;">STOP</button>
-        <span style="color:#888; font-size:12px;">${escapeHtml(version.metadata?.title || 'Untitled')}</span>
-        <button id="restart-btn" style="background:#333; color:#fff; border:none; border-radius:12px; padding:6px 16px; font-size:12px; cursor:pointer;">RESTART</button>
+        <button id="stop-btn" style="background:var(--surface-3); color:var(--text-1); border:none; border-radius:12px; padding:6px 16px; font-size:12px; cursor:pointer;">STOP</button>
+        <span style="color:var(--text-2); font-size:12px;">${escapeHtml(version.metadata?.title || 'Untitled')}</span>
+        <button id="restart-btn" style="background:var(--surface-3); color:var(--text-1); border:none; border-radius:12px; padding:6px 16px; font-size:12px; cursor:pointer;">RESTART</button>
       </div>
       <div id="game-container" style="flex:1; display:flex; align-items:center; justify-content:center; width:100%; overflow:hidden; position:relative;">
         <canvas id="preview-canvas" style="image-rendering: pixelated; background:#000;"></canvas>
       </div>
-      <div id="preview-score" style="color:#ff4500; font-size:14px; font-weight:bold; height:20px;"></div>
-      <div id="preview-error" style="color:#f44; font-size:12px; max-width:360px; text-align:center; display:none;"></div>
+      <div id="preview-score" style="color:var(--primary); font-size:14px; font-weight:bold; height:20px;"></div>
+      <div id="preview-error" style="color:var(--error); font-size:12px; max-width:360px; text-align:center; display:none;"></div>
       <div id="preview-gameover" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); flex-direction:column; align-items:center; justify-content:center; gap:12px; animation:fadeIn 0.4s ease-out;">
-        <div style="color:#fff; font:bold 24px monospace; text-transform:uppercase; letter-spacing:3px; text-shadow:0 0 20px rgba(255,69,0,0.6);">Game Over</div>
-        <div id="preview-go-score" style="color:#ff4500; font:bold 20px monospace;"></div>
-        <button id="preview-go-replay" style="background:#ff4500; color:#fff; border:none; border-radius:16px; padding:10px 28px; font:bold 14px system-ui,sans-serif; cursor:pointer;">PLAY AGAIN</button>
-        <button id="preview-go-stop" style="background:transparent; color:#888; border:1px solid #444; border-radius:16px; padding:6px 16px; font-size:12px; cursor:pointer;">back to preview</button>
+        <div style="color:var(--text-1); font-family:var(--font-display); font-size:24px; text-transform:uppercase; letter-spacing:3px; text-shadow:0 0 20px var(--primary-glow);">Game Over</div>
+        <div id="preview-go-score" style="color:var(--primary); font:bold 20px monospace;"></div>
+        <button id="preview-go-replay" style="background:var(--primary); color:var(--text-1); border:none; border-radius:16px; padding:10px 28px; font:bold 14px var(--font-body); cursor:pointer;">PLAY AGAIN</button>
+        <button id="preview-go-stop" style="background:transparent; color:var(--text-2); border:1px solid var(--border-light); border-radius:16px; padding:6px 16px; font-size:12px; cursor:pointer;">back to preview</button>
       </div>
     </div>
   `;
@@ -1056,17 +1130,17 @@ async function publishGame() {
 function renderEditing() {
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:16px; padding:20px;">
-      <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">Edit Game</h1>
-      <p style="color:#888; font-size:13px; text-align:center; max-width:320px;">
+      <h1 style="font-size:20px; color:var(--primary);">Edit Game</h1>
+      <p style="color:var(--text-2); font-size:13px; text-align:center; max-width:320px;">
         Describe what you want to change
       </p>
       <textarea id="edit-desc" placeholder="e.g. make the enemies faster and add a shield powerup"
-        style="width:100%; max-width:360px; height:100px; padding:12px; border-radius:8px; border:1px solid #333; background:#1a1a1a; color:#fff; font-size:14px; resize:none; font-family:system-ui,sans-serif;"
+        style="width:100%; max-width:360px; height:100px; padding:12px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text-1); font-size:14px; resize:none; font-family:var(--font-body);"
       ></textarea>
-      <button id="apply-btn" style="background:#ff4500; color:#fff; border:none; border-radius:20px; padding:12px 32px; font-size:15px; font-weight:bold; cursor:pointer;">
+      <button id="apply-btn" style="background:var(--primary); color:var(--text-1); border:none; border-radius:20px; padding:12px 32px; font-size:15px; font-weight:bold; cursor:pointer;">
         APPLY
       </button>
-      <button id="back-btn" style="background:transparent; color:#888; border:none; font-size:13px; cursor:pointer; text-decoration:underline;">
+      <button id="back-btn" style="background:transparent; color:var(--text-2); border:none; font-size:13px; cursor:pointer; text-decoration:underline;">
         Back to preview
       </button>
     </div>
@@ -1088,9 +1162,9 @@ function showError(message) {
   if (typeof message !== 'string') message = message?.message || JSON.stringify(message) || 'Unknown error';
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:16px; padding:20px;">
-      <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">rerollgame</h1>
-      <p style="color:#f44; font-size:14px; text-align:center; max-width:300px;">${escapeHtml(message)}</p>
-      <button id="retry-btn" style="background:#ff4500; color:#fff; border:none; border-radius:20px; padding:10px 24px; font-size:15px; font-weight:bold; cursor:pointer;">
+      <h1 class="logo-mark" style="font-size:20px; color:var(--primary);">rerollgame</h1>
+      <p style="color:var(--error); font-size:14px; text-align:center; max-width:300px;">${escapeHtml(message)}</p>
+      <button id="retry-btn" style="background:var(--primary); color:var(--text-1); border:none; border-radius:20px; padding:10px 24px; font-size:15px; font-weight:bold; cursor:pointer;">
         TRY AGAIN
       </button>
     </div>
