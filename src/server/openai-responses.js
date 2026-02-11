@@ -1,8 +1,10 @@
 // OpenAI Responses API client (async background generation)
 
+import { DEFAULT_OPENAI_MODEL } from '../shared/defaults.js';
+
 const BASE_URL = 'https://api.openai.com/v1/responses';
 
-export async function createResponse(apiKey, prompt, model = 'gpt-5.3-codex') {
+export async function createResponse(apiKey, prompt, model = DEFAULT_OPENAI_MODEL) {
   const resp = await fetch(BASE_URL, {
     method: 'POST',
     headers: {
@@ -50,7 +52,9 @@ export async function getResponse(apiKey, responseId) {
   }
 
   if (data.status === 'failed') {
-    return { status: 'failed', error: data.error || 'Unknown error' };
+    const err = data.error;
+    const errorMsg = typeof err === 'string' ? err : err?.message || JSON.stringify(err) || 'Unknown error';
+    return { status: 'failed', error: errorMsg };
   }
 
   if (data.status === 'cancelled') {

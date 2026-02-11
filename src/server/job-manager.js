@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
-
-const DEFAULT_MODEL = 'gpt-5.3-codex';
+import { DEFAULT_OPENAI_MODEL } from '../shared/defaults.js';
 
 export class JobManager {
   constructor(redis) {
@@ -15,7 +14,7 @@ export class JobManager {
       postId,
       description,
       userId,
-      model: options.model || DEFAULT_MODEL,
+      model: options.model || DEFAULT_OPENAI_MODEL,
       status: 'queued',
       createdAt: Date.now().toString(),
     };

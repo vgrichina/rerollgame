@@ -68,7 +68,7 @@
       "openaiModel": {
         "type": "string",
         "label": "OpenAI Model",
-        "defaultValue": "gpt-5.3-codex"
+        "defaultValue": "gpt-5.2-codex"
       }
     }
   },

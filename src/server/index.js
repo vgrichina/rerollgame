@@ -9,6 +9,7 @@ import { JobManager } from './job-manager.js';
 import { DraftManager } from './draft-manager.js';
 import { buildPrompt, buildEditPrompt, parseResponse } from '../shared/game-prompt.js';
 import { validateGame } from '../shared/game-schema.js';
+import { DEFAULT_OPENAI_MODEL } from '../shared/defaults.js';
 
 const app = new Hono();
 const api = new Hono();
@@ -128,7 +129,7 @@ api.get('/jobs/:jobId', async (c) => {
         await jm.markFailed(jobId, new Error('OpenAI API key not configured'));
         return c.json({ status: 'failed', error: 'OpenAI API key not configured' });
       }
-      const model = await settings.get('openaiModel') || 'gpt-5.3-codex';
+      const model = await settings.get('openaiModel') || DEFAULT_OPENAI_MODEL;
 
       let prompt;
       if (job.previousCode) {
@@ -151,6 +152,15 @@ api.get('/jobs/:jobId', async (c) => {
 
     // Polling: check OpenAI status
     if (job.status === 'polling') {
+      const elapsed = Date.now() - parseInt(job.startedAt || job.createdAt);
+      const JOB_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+      if (elapsed > JOB_TIMEOUT_MS) {
+        console.error('Job', jobId, '- timed out after', Math.round(elapsed / 1000), 's');
+        await jm.markFailed(jobId, new Error(`Job timed out after ${Math.round(elapsed / 1000)}s`));
+        return c.json({ status: 'failed', error: `Generation timed out after ${Math.round(elapsed / 1000)}s` });
+      }
+
       const openaiKey = await settings.get('openaiKey');
       if (!openaiKey) {
         await jm.markFailed(jobId, new Error('OpenAI API key not configured'));
@@ -160,15 +170,18 @@ api.get('/jobs/:jobId', async (c) => {
       let result;
       try {
         result = await getResponse(openaiKey, job.openaiResponseId);
+        console.log('Job', jobId, '- poll:', result.status, `(${Math.round(elapsed / 1000)}s elapsed, openaiId: ${job.openaiResponseId})`);
       } catch (networkErr) {
-        console.error('Job', jobId, '- getResponse transient error:', networkErr.message);
-        return c.json({ status: 'polling', progress: job.progress || 10 });
+        console.error('Job', jobId, '- getResponse transient error:', networkErr.message, `(${Math.round(elapsed / 1000)}s elapsed)`);
+        return c.json({ status: 'polling', progress: job.progress || 10, debug: { elapsed, error: networkErr.message, openaiResponseId: job.openaiResponseId } });
       }
 
       if (result.status === 'completed') {
+        console.log('Job', jobId, '- completed in', Math.round(elapsed / 1000), 's, parsing response...');
         const gameCode = parseResponse(result.text);
         const validation = validateGame(gameCode);
         if (!validation.valid) {
+          console.error('Job', jobId, '- validation failed:', validation.errors.join(', '));
           await jm.markFailed(jobId, new Error(`Validation failed: ${validation.errors.join(', ')}`));
           return c.json({ status: 'failed', error: `Validation failed: ${validation.errors.join(', ')}` });
         }
@@ -176,17 +189,19 @@ api.get('/jobs/:jobId', async (c) => {
         const metadata = extractMetadata(gameCode, job.description);
         const gameDefinition = { gameCode, metadata, description: job.description };
         await jm.markCompleted(jobId, gameDefinition);
+        console.log('Job', jobId, '- saved, title:', metadata.title);
 
         return c.json({ status: 'completed', gameDefinition });
       }
 
       if (result.status === 'failed') {
+        console.error('Job', jobId, '- OpenAI failed:', result.error);
         await jm.markFailed(jobId, new Error(result.error));
         return c.json({ status: 'failed', error: result.error });
       }
 
       // Still in progress
-      return c.json({ status: 'polling', progress: job.progress || 10 });
+      return c.json({ status: 'polling', progress: job.progress || 10, debug: { elapsed, openaiStatus: result.status, openaiResponseId: job.openaiResponseId } });
     }
 
     // Already completed or failed
@@ -204,6 +219,31 @@ api.get('/jobs/:jobId', async (c) => {
     try { await jm.markFailed(jobId, err); } catch (_) {}
     return c.json({ status: 'failed', error: err.message }, 500);
   }
+});
+
+// Debug endpoint — full raw job state
+api.get('/jobs/:jobId/debug', async (c) => {
+  const { jobManager: jm } = await getManagers();
+  const jobId = c.req.param('jobId');
+
+  const job = await jm.getJob(jobId);
+  if (!job) return c.json({ error: 'Job not found' }, 404);
+
+  const now = Date.now();
+  const createdAt = parseInt(job.createdAt || 0);
+  const startedAt = parseInt(job.startedAt || 0);
+  const completedAt = parseInt(job.completedAt || 0);
+
+  return c.json({
+    ...job,
+    gameDefinition: job.gameDefinition ? '(present)' : null,
+    _debug: {
+      now,
+      elapsedSinceCreated: createdAt ? `${Math.round((now - createdAt) / 1000)}s` : null,
+      elapsedSinceStarted: startedAt ? `${Math.round((now - startedAt) / 1000)}s` : null,
+      completionTime: completedAt && startedAt ? `${Math.round((completedAt - startedAt) / 1000)}s` : null,
+    },
+  });
 });
 
 // List user's drafts

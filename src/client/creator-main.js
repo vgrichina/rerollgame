@@ -33,6 +33,11 @@ let currentVersionIndex = 0;
 let pollTimer = null;
 let progressValue = 0;
 let pollErrors = 0;
+let debugLog = []; // [{time, msg}]
+let debugExpanded = false;
+let pollCount = 0;
+let lastPollData = null;
+let generationStartTime = 0;
 
 // Initialize slots
 rollAll();
@@ -138,6 +143,11 @@ async function resumeDraft(draftId) {
 
   if (data.draft.status === 'generating' && data.draft.jobId) {
     currentJobId = data.draft.jobId;
+    pollCount = 0;
+    lastPollData = null;
+    debugLog = [];
+    generationStartTime = Date.now();
+    addDebugLog(`Resumed generating job: ${data.draft.jobId}`);
     state = 'generating';
     render();
     startPolling();
@@ -224,6 +234,11 @@ async function startGeneration(description) {
   state = 'generating';
   progressValue = 0;
   pollErrors = 0;
+  pollCount = 0;
+  lastPollData = null;
+  debugLog = [];
+  generationStartTime = Date.now();
+  addDebugLog(`Starting generation: ${description.slice(0, 80)}`);
   render();
 
   try {
@@ -235,14 +250,17 @@ async function startGeneration(description) {
     const data = await res.json();
 
     if (data.error) {
+      addDebugLog(`Generate error: ${data.error}`);
       showError(data.error);
       return;
     }
 
     currentJobId = data.jobId;
     currentDraftId = data.draftId;
+    addDebugLog(`Job created: ${data.jobId}`);
     startPolling();
   } catch (err) {
+    addDebugLog(`Generate fetch error: ${err.message}`);
     showError(err.message);
   }
 }
@@ -258,6 +276,11 @@ async function startEdit(description) {
   state = 'generating';
   progressValue = 0;
   pollErrors = 0;
+  pollCount = 0;
+  lastPollData = null;
+  debugLog = [];
+  generationStartTime = Date.now();
+  addDebugLog(`Starting edit: ${description.slice(0, 80)}`);
   render();
 
   try {
@@ -273,19 +296,25 @@ async function startEdit(description) {
     const data = await res.json();
 
     if (data.error) {
+      addDebugLog(`Edit error: ${data.error}`);
       showError(data.error);
       return;
     }
 
     currentJobId = data.jobId;
+    addDebugLog(`Edit job created: ${data.jobId}`);
     startPolling();
   } catch (err) {
+    addDebugLog(`Edit fetch error: ${err.message}`);
     showError(err.message);
   }
 }
 
 // --- Generating (polling) ---
 function renderGenerating() {
+  const elapsed = generationStartTime ? Math.round((Date.now() - generationStartTime) / 1000) : 0;
+  const debugLines = debugLog.slice(-20).map(l => `<div style="color:#888; font-size:10px; font-family:monospace; white-space:pre-wrap;">[${l.time}] ${escapeHtml(l.msg)}</div>`).join('');
+
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:16px; padding:20px;">
       <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">rerollgame</h1>
@@ -293,9 +322,73 @@ function renderGenerating() {
         <div id="progress-bar" style="height:100%; background:#ff4500; border-radius:4px; transition:width 0.5s; width:${progressValue}%;"></div>
       </div>
       <p style="color:#aaa; font-size:14px;">Generating your game...</p>
-      <p id="progress-text" style="color:#666; font-size:12px;">${progressValue}%</p>
+      <p id="progress-text" style="color:#666; font-size:12px;">${progressValue}% — ${elapsed}s elapsed — poll #${pollCount}</p>
+      <button id="cancel-btn" style="background:transparent; color:#888; border:1px solid #444; border-radius:16px; padding:6px 16px; font-size:12px; cursor:pointer; margin-top:4px;">Cancel</button>
+      <div style="width:100%; max-width:400px; margin-top:12px;">
+        <button id="debug-toggle" style="background:transparent; color:#666; border:none; font-size:11px; cursor:pointer; text-decoration:underline;">
+          ${debugExpanded ? 'Hide' : 'Show'} Debug
+        </button>
+        <div id="debug-panel" style="display:${debugExpanded ? 'block' : 'none'}; margin-top:8px; padding:10px; background:#111; border:1px solid #333; border-radius:8px; max-height:300px; overflow-y:auto;">
+          <div style="font-size:11px; color:#ff4500; font-weight:600; margin-bottom:6px;">Job Debug</div>
+          <div style="font-size:10px; color:#aaa; font-family:monospace; margin-bottom:8px;">
+            jobId: ${currentJobId || 'n/a'}<br>
+            polls: ${pollCount} | errors: ${pollErrors}<br>
+            elapsed: ${elapsed}s<br>
+            lastStatus: ${lastPollData ? (lastPollData.status || 'unknown') : 'n/a'}<br>
+            openaiId: ${lastPollData?.debug?.openaiResponseId || 'n/a'}<br>
+            openaiStatus: ${lastPollData?.debug?.openaiStatus || 'n/a'}<br>
+            serverElapsed: ${lastPollData?.debug?.elapsed ? Math.round(lastPollData.debug.elapsed / 1000) + 's' : 'n/a'}
+          </div>
+          <div style="font-size:11px; color:#ff4500; font-weight:600; margin-bottom:4px;">Log</div>
+          ${debugLines || '<div style="color:#666; font-size:10px;">No events yet</div>'}
+          <div style="margin-top:8px; border-top:1px solid #333; padding-top:8px;">
+            <div style="font-size:11px; color:#ff4500; font-weight:600; margin-bottom:4px;">Lookup Job by ID</div>
+            <div style="display:flex; gap:4px;">
+              <input id="debug-job-input" type="text" placeholder="paste job ID" style="flex:1; background:#1a1a1a; border:1px solid #444; border-radius:4px; padding:4px 6px; color:#fff; font-size:10px; font-family:monospace;">
+              <button id="debug-lookup-btn" style="background:#333; color:#fff; border:none; border-radius:4px; padding:4px 8px; font-size:10px; cursor:pointer;">Lookup</button>
+            </div>
+            <pre id="debug-lookup-result" style="color:#aaa; font-size:10px; font-family:monospace; white-space:pre-wrap; margin-top:4px; max-height:150px; overflow-y:auto;"></pre>
+          </div>
+        </div>
+      </div>
     </div>
   `;
+
+  document.getElementById('cancel-btn').addEventListener('click', () => {
+    stopPolling();
+    addDebugLog('Cancelled by user');
+    state = 'roll';
+    render();
+  });
+
+  document.getElementById('debug-toggle').addEventListener('click', () => {
+    debugExpanded = !debugExpanded;
+    const panel = document.getElementById('debug-panel');
+    const toggle = document.getElementById('debug-toggle');
+    if (panel) panel.style.display = debugExpanded ? 'block' : 'none';
+    if (toggle) toggle.textContent = `${debugExpanded ? 'Hide' : 'Show'} Debug`;
+  });
+
+  document.getElementById('debug-lookup-btn')?.addEventListener('click', async () => {
+    const id = document.getElementById('debug-job-input')?.value?.trim();
+    const resultEl = document.getElementById('debug-lookup-result');
+    if (!id || !resultEl) return;
+    resultEl.textContent = 'Loading...';
+    try {
+      const res = await fetch(`/api/jobs/${id}/debug`);
+      const data = await res.json();
+      resultEl.textContent = JSON.stringify(data, null, 2);
+    } catch (err) {
+      resultEl.textContent = `Error: ${err.message}`;
+    }
+  });
+}
+
+function addDebugLog(msg) {
+  const now = new Date();
+  const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+  debugLog.push({ time, msg });
+  if (debugLog.length > 50) debugLog.shift();
 }
 
 function startPolling() {
@@ -313,13 +406,16 @@ function stopPolling() {
 
 async function pollJob() {
   if (!currentJobId) return;
+  pollCount++;
 
   try {
     const res = await fetch(`/api/jobs/${currentJobId}`);
     const data = await res.json();
+    lastPollData = data;
 
     if (data.status === 'completed') {
       pollErrors = 0;
+      addDebugLog(`Completed! (poll #${pollCount})`);
       stopPolling();
       await onGenerationComplete(data.gameDefinition);
       return;
@@ -327,6 +423,7 @@ async function pollJob() {
 
     if (data.status === 'failed') {
       pollErrors = 0;
+      addDebugLog(`Failed: ${data.error}`);
       stopPolling();
       showError(data.error || 'Generation failed');
       return;
@@ -334,18 +431,25 @@ async function pollJob() {
 
     if (data.status === 'polling') {
       pollErrors = 0;
+      const openaiStatus = data.debug?.openaiStatus || '?';
+      const serverElapsed = data.debug?.elapsed ? Math.round(data.debug.elapsed / 1000) : '?';
+      addDebugLog(`Poll #${pollCount}: openai=${openaiStatus}, progress=${data.progress}%, server=${serverElapsed}s`);
+
       if (data.progress != null) {
         progressValue = data.progress;
-        const bar = document.getElementById('progress-bar');
-        const text = document.getElementById('progress-text');
-        if (bar) bar.style.width = `${progressValue}%`;
-        if (text) text.textContent = `${progressValue}%`;
       }
+      // Update UI in-place without full re-render
+      const elapsed = generationStartTime ? Math.round((Date.now() - generationStartTime) / 1000) : 0;
+      const bar = document.getElementById('progress-bar');
+      const text = document.getElementById('progress-text');
+      if (bar) bar.style.width = `${progressValue}%`;
+      if (text) text.textContent = `${progressValue}% — ${elapsed}s elapsed — poll #${pollCount}`;
       return;
     }
 
     // No recognized status field — treat as error
     pollErrors++;
+    addDebugLog(`Unexpected response (${pollErrors}/5): ${JSON.stringify(data).slice(0, 100)}`);
     console.warn(`pollJob: unexpected response (${pollErrors}/5):`, data);
     if (pollErrors >= 5) {
       stopPolling();
@@ -353,6 +457,7 @@ async function pollJob() {
     }
   } catch (err) {
     pollErrors++;
+    addDebugLog(`Network error (${pollErrors}/5): ${err.message}`);
     console.warn(`pollJob: network error (${pollErrors}/5):`, err.message);
     if (pollErrors >= 5) {
       stopPolling();
@@ -554,6 +659,7 @@ function renderEditing() {
 
 // --- Error ---
 function showError(message) {
+  if (typeof message !== 'string') message = message?.message || JSON.stringify(message) || 'Unknown error';
   root.innerHTML = `
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:16px; padding:20px;">
       <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">rerollgame</h1>

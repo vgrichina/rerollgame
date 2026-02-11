@@ -1,5 +1,6 @@
 // Mock @devvit/web/server for testbed mode (Hono-based)
 
+import { DEFAULT_OPENAI_MODEL } from '../../shared/defaults.js';
 import { createClient } from 'redis';
 import { createServer as createServerHTTP } from 'node:http';
 import path from 'node:path';
@@ -449,10 +450,14 @@ export const settings = {
       'geminiModel': 'GEMINI_MODEL',
     };
 
+    const defaults = {
+      'openaiModel': DEFAULT_OPENAI_MODEL,
+    };
+
     const envKey = keyMappings[key];
     if (envKey && process.env[envKey]) {
       return process.env[envKey];
     }
-    return null;
+    return defaults[key] || null;
   },
 };
