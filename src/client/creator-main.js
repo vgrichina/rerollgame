@@ -2,8 +2,29 @@ import { navigateTo } from '@devvit/web/client';
 
 const root = document.getElementById('root');
 
+// Slot machine components
+const SLOTS = {
+  genre: ['platformer', 'shooter', 'puzzle', 'racing', 'tower defense', 'RPG', 'rhythm', 'survival', 'endless runner', 'breakout', 'snake', 'match-3', 'bullet hell', 'roguelike', 'pinball'],
+  theme: ['space', 'underwater', 'medieval', 'cyberpunk', 'jungle', 'ice world', 'desert', 'haunted house', 'candy land', 'volcanic', 'pirate', 'ninja', 'robot factory', 'dream world', 'tiny bugs'],
+  mechanic: ['powerups', 'gravity flip', 'time rewind', 'combo chains', 'shield bash', 'dash attack', 'double jump', 'teleport', 'shrink and grow', 'bouncing', 'grappling hook', 'wall sliding', 'clone split', 'magnet pull', 'charge shot'],
+  twist: ['enemies split when hit', 'screen rotates slowly', 'everything speeds up over time', 'one-hit kills both ways', 'shrinking arena', 'random portals appear', 'collect coins to survive', 'day/night cycle changes enemies', 'floor is lava', 'everything bounces'],
+};
+
+const SLOT_LABELS = { genre: 'Genre', theme: 'Theme', mechanic: 'Mechanic', twist: 'Twist' };
+const SLOT_KEYS = Object.keys(SLOTS);
+
+function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+// Current slot values
+let slotValues = {};
+function rollAll() { SLOT_KEYS.forEach(k => { slotValues[k] = pickRandom(SLOTS[k]); }); }
+function rollOne(key) { slotValues[key] = pickRandom(SLOTS[key]); }
+function buildDescription() {
+  return `a ${slotValues.genre} game set in ${slotValues.theme} with ${slotValues.mechanic} where ${slotValues.twist}`;
+}
+
 // State
-let state = 'drafts-list'; // drafts-list | describe | generating | preview | editing
+let state = 'roll'; // roll | drafts-list | generating | preview | editing
 let drafts = [];
 let currentDraft = null;
 let currentJobId = null;
@@ -11,9 +32,13 @@ let currentDraftId = null;
 let currentVersionIndex = 0;
 let pollTimer = null;
 let progressValue = 0;
+let pollErrors = 0;
+
+// Initialize slots
+rollAll();
 
 async function init() {
-  await loadDrafts();
+  loadDrafts(); // load in background, don't block
   render();
 }
 
@@ -29,8 +54,8 @@ async function loadDrafts() {
 
 function render() {
   switch (state) {
+    case 'roll': renderRoll(); break;
     case 'drafts-list': renderDraftsList(); break;
-    case 'describe': renderDescribe(); break;
     case 'generating': renderGenerating(); break;
     case 'preview': renderPreview(); break;
     case 'editing': renderEditing(); break;
@@ -76,7 +101,8 @@ function renderDraftsList() {
     currentDraft = null;
     currentDraftId = null;
     currentVersionIndex = 0;
-    state = 'describe';
+    rollAll();
+    state = 'roll';
     render();
   });
 
@@ -119,39 +145,76 @@ async function resumeDraft(draftId) {
     state = 'preview';
     render();
   } else {
-    state = 'describe';
+    rollAll();
+    state = 'roll';
     render();
   }
 }
 
-// --- Describe ---
-function renderDescribe() {
-  const savedDesc = currentDraft?.description || '';
+// --- Roll (slot machine) ---
+function renderRoll() {
+  const slotRows = SLOT_KEYS.map(key => `
+    <div style="display:flex; align-items:center; gap:8px; width:100%; max-width:360px;">
+      <span style="color:#888; font-size:11px; text-transform:uppercase; width:64px; text-align:right; flex-shrink:0;">${SLOT_LABELS[key]}</span>
+      <div class="slot-value" data-key="${key}" style="flex:1; background:#1a1a1a; border:1px solid #333; border-radius:8px; padding:10px 14px; color:#fff; font-size:14px; cursor:pointer; transition:background 0.15s; user-select:none;">${escapeHtml(slotValues[key])}</div>
+    </div>
+  `).join('');
 
   root.innerHTML = `
-    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:16px; padding:20px;">
-      <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">Describe Your Game</h1>
-      <p style="color:#888; font-size:13px; text-align:center; max-width:320px;">
-        What kind of game do you want to make?
-      </p>
-      <textarea id="game-desc" placeholder="e.g. a space invaders clone with powerups"
-        style="width:100%; max-width:360px; height:100px; padding:12px; border-radius:8px; border:1px solid #333; background:#1a1a1a; color:#fff; font-size:14px; resize:none; font-family:system-ui,sans-serif;"
-      >${escapeHtml(savedDesc)}</textarea>
-      <button id="generate-btn" style="background:#ff4500; color:#fff; border:none; border-radius:20px; padding:12px 32px; font-size:15px; font-weight:bold; cursor:pointer;">
-        GENERATE
-      </button>
-      <button id="back-btn" style="background:transparent; color:#888; border:none; font-size:13px; cursor:pointer; text-decoration:underline;">
-        Back to drafts
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:14px; padding:20px;">
+      <h1 style="font-size:20px; font-weight:bold; color:#ff4500;">rerollgame</h1>
+      <p style="color:#888; font-size:13px;">Tap a slot to re-roll it</p>
+      ${slotRows}
+      <div style="display:flex; gap:10px; margin-top:8px;">
+        <button id="roll-all-btn" style="background:#222; color:#ff4500; border:1px solid #ff4500; border-radius:20px; padding:10px 24px; font-size:14px; font-weight:bold; cursor:pointer;">
+          ROLL
+        </button>
+        <button id="generate-btn" style="background:#ff4500; color:#fff; border:none; border-radius:20px; padding:10px 24px; font-size:14px; font-weight:bold; cursor:pointer;">
+          GENERATE
+        </button>
+      </div>
+      <button id="drafts-btn" style="background:transparent; color:#888; border:none; font-size:13px; cursor:pointer; text-decoration:underline;">
+        My drafts${drafts.length > 0 ? ` (${drafts.length})` : ''}
       </button>
     </div>
+    <style>
+      .slot-value:hover { background: #252525 !important; }
+      .slot-value:active { background: #333 !important; }
+      .slot-spin { animation: slotSpin 0.3s ease-out; }
+      @keyframes slotSpin { 0% { opacity:0; transform:translateY(-8px); } 100% { opacity:1; transform:translateY(0); } }
+    </style>
   `;
 
-  document.getElementById('generate-btn').addEventListener('click', () => {
-    const desc = document.getElementById('game-desc').value.trim();
-    if (desc) startGeneration(desc);
+  // Tap individual slot to re-roll
+  root.querySelectorAll('.slot-value').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.key;
+      rollOne(key);
+      el.textContent = slotValues[key];
+      el.classList.remove('slot-spin');
+      void el.offsetWidth; // reflow
+      el.classList.add('slot-spin');
+    });
   });
 
-  document.getElementById('back-btn').addEventListener('click', () => {
+  // Roll all
+  document.getElementById('roll-all-btn').addEventListener('click', () => {
+    rollAll();
+    root.querySelectorAll('.slot-value').forEach(el => {
+      el.textContent = slotValues[el.dataset.key];
+      el.classList.remove('slot-spin');
+      void el.offsetWidth;
+      el.classList.add('slot-spin');
+    });
+  });
+
+  // Generate from current slots
+  document.getElementById('generate-btn').addEventListener('click', () => {
+    startGeneration(buildDescription());
+  });
+
+  document.getElementById('drafts-btn').addEventListener('click', async () => {
+    await loadDrafts();
     state = 'drafts-list';
     render();
   });
@@ -160,6 +223,7 @@ function renderDescribe() {
 async function startGeneration(description) {
   state = 'generating';
   progressValue = 0;
+  pollErrors = 0;
   render();
 
   try {
@@ -193,6 +257,7 @@ async function startEdit(description) {
 
   state = 'generating';
   progressValue = 0;
+  pollErrors = 0;
   render();
 
   try {
@@ -254,27 +319,45 @@ async function pollJob() {
     const data = await res.json();
 
     if (data.status === 'completed') {
+      pollErrors = 0;
       stopPolling();
       await onGenerationComplete(data.gameDefinition);
       return;
     }
 
     if (data.status === 'failed') {
+      pollErrors = 0;
       stopPolling();
       showError(data.error || 'Generation failed');
       return;
     }
 
-    // Update progress
-    if (data.progress != null) {
-      progressValue = data.progress;
-      const bar = document.getElementById('progress-bar');
-      const text = document.getElementById('progress-text');
-      if (bar) bar.style.width = `${progressValue}%`;
-      if (text) text.textContent = `${progressValue}%`;
+    if (data.status === 'polling') {
+      pollErrors = 0;
+      if (data.progress != null) {
+        progressValue = data.progress;
+        const bar = document.getElementById('progress-bar');
+        const text = document.getElementById('progress-text');
+        if (bar) bar.style.width = `${progressValue}%`;
+        if (text) text.textContent = `${progressValue}%`;
+      }
+      return;
+    }
+
+    // No recognized status field — treat as error
+    pollErrors++;
+    console.warn(`pollJob: unexpected response (${pollErrors}/5):`, data);
+    if (pollErrors >= 5) {
+      stopPolling();
+      showError(data.error || 'Generation failed after multiple errors');
     }
   } catch (err) {
-    // Silently retry on network errors
+    pollErrors++;
+    console.warn(`pollJob: network error (${pollErrors}/5):`, err.message);
+    if (pollErrors >= 5) {
+      stopPolling();
+      showError('Lost connection to server');
+    }
   }
 }
 
@@ -325,7 +408,8 @@ function renderPreview() {
   const versions = currentDraft?.versions || [];
   const version = versions[currentVersionIndex];
   if (!version) {
-    state = 'describe';
+    rollAll();
+    state = 'roll';
     render();
     return;
   }
@@ -372,13 +456,9 @@ function renderPreview() {
   });
 
   document.getElementById('reroll-btn').addEventListener('click', () => {
-    const desc = currentDraft?.description || '';
-    if (desc) {
-      startGeneration(desc);
-    } else {
-      state = 'describe';
-      render();
-    }
+    rollAll();
+    state = 'roll';
+    render();
   });
 
   document.getElementById('back-btn').addEventListener('click', async () => {

@@ -37,7 +37,7 @@ async function getRedisClient() {
 
 // --- Context (mutable, set per-request) ---
 export const context = {
-  postId: null,
+  postId: '',
   userId: 'testuser',
   subredditName: 'testbed',
 };
@@ -330,7 +330,11 @@ export const redis = {
 
   async hSet(key, fieldValues) {
     const client = await getRedisClient();
-    return await client.hSet(key, fieldValues);
+    const sanitized = {};
+    for (const [k, v] of Object.entries(fieldValues)) {
+      sanitized[k] = v == null ? '' : String(v);
+    }
+    return await client.hSet(key, sanitized);
   },
 
   async hGet(key, field) {

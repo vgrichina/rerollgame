@@ -123,7 +123,11 @@ api.get('/jobs/:jobId', async (c) => {
     // Lazy start: if queued, fire the OpenAI request now
     if (job.status === 'queued') {
       const openaiKey = await settings.get('openaiKey');
-      if (!openaiKey) return c.json({ error: 'OpenAI API key not configured' }, 500);
+      if (!openaiKey) {
+        console.error('Job', jobId, '- OpenAI API key not configured');
+        await jm.markFailed(jobId, new Error('OpenAI API key not configured'));
+        return c.json({ status: 'failed', error: 'OpenAI API key not configured' });
+      }
       const model = await settings.get('openaiModel') || 'gpt-5.3-codex';
 
       let prompt;
@@ -133,18 +137,33 @@ api.get('/jobs/:jobId', async (c) => {
         prompt = buildPrompt(job.description);
       }
 
-      const openaiResp = await createResponse(openaiKey, prompt, model);
-      await jm.markPolling(jobId, openaiResp.id);
-
-      return c.json({ status: 'polling', progress: 5 });
+      try {
+        const openaiResp = await createResponse(openaiKey, prompt, model);
+        await jm.markPolling(jobId, openaiResp.id);
+        console.log('Job', jobId, '- OpenAI response created:', openaiResp.id);
+        return c.json({ status: 'polling', progress: 5 });
+      } catch (openaiErr) {
+        console.error('Job', jobId, '- OpenAI create failed:', openaiErr.message);
+        await jm.markFailed(jobId, openaiErr);
+        return c.json({ status: 'failed', error: openaiErr.message });
+      }
     }
 
     // Polling: check OpenAI status
     if (job.status === 'polling') {
       const openaiKey = await settings.get('openaiKey');
-      if (!openaiKey) return c.json({ error: 'OpenAI API key not configured' }, 500);
+      if (!openaiKey) {
+        await jm.markFailed(jobId, new Error('OpenAI API key not configured'));
+        return c.json({ status: 'failed', error: 'OpenAI API key not configured' });
+      }
 
-      const result = await getResponse(openaiKey, job.openaiResponseId);
+      let result;
+      try {
+        result = await getResponse(openaiKey, job.openaiResponseId);
+      } catch (networkErr) {
+        console.error('Job', jobId, '- getResponse transient error:', networkErr.message);
+        return c.json({ status: 'polling', progress: job.progress || 10 });
+      }
 
       if (result.status === 'completed') {
         const gameCode = parseResponse(result.text);
@@ -182,7 +201,8 @@ api.get('/jobs/:jobId', async (c) => {
     return c.json({ status: job.status });
   } catch (err) {
     console.error('Job poll error:', err);
-    return c.json({ error: err.message }, 500);
+    try { await jm.markFailed(jobId, err); } catch (_) {}
+    return c.json({ status: 'failed', error: err.message }, 500);
   }
 });
 
