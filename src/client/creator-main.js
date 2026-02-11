@@ -2,6 +2,7 @@ import { navigateTo } from '@devvit/web/client';
 import { executeCommands } from './renderer.js';
 import { processAudioCommands, preloadSounds, tryResumeAudio } from './audio.js';
 import { initQuickJS, createSandbox } from './sandbox.js';
+import demoGameCode from '../shared/test-games/roofrunner.js?raw';
 
 const root = document.getElementById('root');
 
@@ -306,9 +307,14 @@ function renderRoll() {
           GENERATE
         </button>
       </div>
-      <button id="drafts-btn" style="background:transparent; color:var(--text-2); border:none; font-size:13px; cursor:pointer; text-decoration:underline;">
-        My drafts${drafts.length > 0 ? ` (${drafts.length})` : ''}
-      </button>
+      <div style="display:flex; gap:16px; align-items:center;">
+        <button id="drafts-btn" style="background:transparent; color:var(--text-2); border:none; font-size:13px; cursor:pointer; text-decoration:underline;">
+          My drafts${drafts.length > 0 ? ` (${drafts.length})` : ''}
+        </button>
+        <button id="demo-btn" style="background:transparent; color:var(--text-3); border:none; font-size:13px; cursor:pointer; text-decoration:underline;">
+          Demo
+        </button>
+      </div>
     </div>
     <style>
       .slot-value:hover { background: var(--surface-2) !important; border-color: var(--border-light) !important; }
@@ -349,6 +355,17 @@ function renderRoll() {
   document.getElementById('drafts-btn').addEventListener('click', async () => {
     await loadDrafts();
     state = 'drafts-list';
+    render();
+  });
+
+  document.getElementById('demo-btn').addEventListener('click', () => {
+    currentDraft = {
+      title: 'Roof Runner (Demo)',
+      versions: [{ gameCode: demoGameCode, metadata: { title: 'Roof Runner' }, description: 'Demo game' }],
+    };
+    currentDraftId = null;
+    currentVersionIndex = 0;
+    state = 'playing';
     render();
   });
 }
@@ -1199,6 +1216,12 @@ async function renderPlaying() {
       </div>
       <div id="game-container" style="flex:1; display:flex; align-items:center; justify-content:center; width:100%; overflow:hidden; position:relative; min-height:0;">
         <canvas id="preview-canvas" style="image-rendering: pixelated; background:#000;"></canvas>
+        <div id="preview-gameover" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); flex-direction:column; align-items:center; justify-content:center; gap:12px; animation:fadeIn 0.4s ease-out;">
+          <div style="color:var(--text-1); font-family:var(--font-display); font-size:24px; text-transform:uppercase; letter-spacing:3px; text-shadow:0 0 20px var(--primary-glow);">Game Over</div>
+          <div id="preview-go-score" style="color:var(--primary); font:bold 20px monospace;"></div>
+          <button id="preview-go-replay" style="background:var(--primary); color:var(--text-1); border:none; border-radius:16px; padding:10px 28px; font:bold 14px var(--font-body); cursor:pointer;">PLAY AGAIN</button>
+          <button id="preview-go-stop" style="background:transparent; color:var(--text-2); border:1px solid var(--border-light); border-radius:16px; padding:6px 16px; font-size:12px; cursor:pointer;">back to preview</button>
+        </div>
       </div>
       <div id="debug-drawer" style="display:${debugPanelOpen ? 'flex' : 'none'}; flex-direction:column; width:100%; height:40vh; background:var(--surface-1); border:1px solid var(--border); border-radius:8px; overflow:hidden; flex-shrink:0;">
         <div id="debug-tabs" style="display:flex; border-bottom:1px solid var(--border); flex-shrink:0;">
@@ -1212,12 +1235,6 @@ async function renderPlaying() {
       </div>
       <div id="preview-score" style="color:var(--primary); font-size:14px; font-weight:bold; height:20px; flex-shrink:0;"></div>
       <div id="preview-error" style="color:var(--error); font-size:12px; max-width:360px; text-align:center; display:none;"></div>
-      <div id="preview-gameover" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); flex-direction:column; align-items:center; justify-content:center; gap:12px; animation:fadeIn 0.4s ease-out;">
-        <div style="color:var(--text-1); font-family:var(--font-display); font-size:24px; text-transform:uppercase; letter-spacing:3px; text-shadow:0 0 20px var(--primary-glow);">Game Over</div>
-        <div id="preview-go-score" style="color:var(--primary); font:bold 20px monospace;"></div>
-        <button id="preview-go-replay" style="background:var(--primary); color:var(--text-1); border:none; border-radius:16px; padding:10px 28px; font:bold 14px var(--font-body); cursor:pointer;">PLAY AGAIN</button>
-        <button id="preview-go-stop" style="background:transparent; color:var(--text-2); border:1px solid var(--border-light); border-radius:16px; padding:6px 16px; font-size:12px; cursor:pointer;">back to preview</button>
-      </div>
     </div>
   `;
 
