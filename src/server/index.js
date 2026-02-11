@@ -10,6 +10,7 @@ import { DraftManager } from './draft-manager.js';
 import { buildPrompt, buildEditPrompt, parseResponse } from '../shared/game-prompt.js';
 import { validateGame } from '../shared/game-schema.js';
 import { DEFAULT_OPENAI_MODEL } from '../shared/defaults.js';
+import { PNG } from 'pngjs';
 
 const app = new Hono();
 const api = new Hono();
@@ -354,24 +355,87 @@ api.get('/game/test', async (c) => {
   }
 });
 
-// Image generation (Gemini)
+// Nearest-neighbor resize PNG buffer → new PNG buffer
+function resizePng(srcBuf, targetW, targetH) {
+  const src = PNG.sync.read(srcBuf);
+  const dst = new PNG({ width: targetW, height: targetH });
+  for (let y = 0; y < targetH; y++) {
+    const sy = Math.floor(y * src.height / targetH);
+    for (let x = 0; x < targetW; x++) {
+      const sx = Math.floor(x * src.width / targetW);
+      const si = (sy * src.width + sx) * 4;
+      const di = (y * targetW + x) * 4;
+      dst.data[di] = src.data[si];
+      dst.data[di + 1] = src.data[si + 1];
+      dst.data[di + 2] = src.data[si + 2];
+      dst.data[di + 3] = src.data[si + 3];
+    }
+  }
+  return PNG.sync.write(dst);
+}
+
+// Upload data URI to Reddit CDN with retries
+async function uploadToCdn(media, dataUri) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const result = await media.upload({ url: dataUri, type: 'image' });
+      return result.mediaUrl;
+    } catch (err) {
+      console.warn(`[img] Upload attempt ${attempt}/3 failed:`, err.message);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+    }
+  }
+  return null;
+}
+
+// Image generation (Gemini) → resize → upload to Reddit CDN
+// Two-tier cache: orig (prompt-only) + sized (prompt+WxH)
 api.post('/image/generate', async (c) => {
-  const { redis, settings } = await import('@devvit/web/server');
+  const { redis, settings, media } = await import('@devvit/web/server');
 
   const body = await c.req.json();
-  const { prompt, w, h } = body;
+  const { prompt, w: reqW, h: reqH } = body;
 
   if (!prompt) return c.json({ error: 'Prompt is required' }, 400);
 
+  const w = reqW || 64;
+  const h = reqH || 64;
+  const promptHash = simpleHash(prompt);
+  const sizedKey = `img3:${promptHash}:${w}x${h}`;
+  const origKey = `img3:${promptHash}:orig`;
+  const TTL = 30 * 24 * 60 * 60;
+
   console.log(`[img] Request: "${prompt.slice(0, 60)}" ${w}x${h}`);
 
-  const cacheKey = `img:${simpleHash(prompt + w + h)}`;
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    console.log(`[img] Cache hit (${(cached.length / 1024).toFixed(0)}KB)`);
-    return c.json({ image: cached });
+  // 1. Sized cache hit
+  const sizedUrl = await redis.get(sizedKey);
+  if (sizedUrl) {
+    console.log(`[img] Sized cache hit: ${sizedUrl}`);
+    return c.json({ url: sizedUrl });
   }
 
+  // 2. Original cache hit → resize from CDN
+  const origUrl = await redis.get(origKey);
+  if (origUrl) {
+    console.log(`[img] Orig cache hit, resizing to ${w}x${h}...`);
+    try {
+      const origResp = await fetch(origUrl);
+      const origBuf = Buffer.from(await origResp.arrayBuffer());
+      const resizedBuf = resizePng(origBuf, w, h);
+      const resizedUri = `data:image/png;base64,${resizedBuf.toString('base64')}`;
+      const resizedUrl = await uploadToCdn(media, resizedUri);
+      if (resizedUrl) {
+        await redis.set(sizedKey, resizedUrl, { EX: TTL });
+        console.log(`[img] Resized & uploaded: ${resizedUrl}`);
+        return c.json({ url: resizedUrl });
+      }
+    } catch (resizeErr) {
+      console.warn(`[img] Resize from cache failed, returning orig:`, resizeErr.message);
+    }
+    return c.json({ url: origUrl });
+  }
+
+  // 3. Miss both → generate, upload orig, resize, upload sized
   try {
     const geminiKey = await settings.get('geminiKey');
     if (!geminiKey) {
@@ -381,12 +445,34 @@ api.post('/image/generate', async (c) => {
 
     console.log('[img] Calling Gemini...');
     const t0 = Date.now();
-    const imageData = await geminiImage(geminiKey, prompt, { w: w || 256, h: h || 256 });
-    console.log(`[img] Generated in ${((Date.now() - t0) / 1000).toFixed(1)}s (${(imageData.length / 1024).toFixed(0)}KB)`);
+    const result = await geminiImage(geminiKey, prompt, { w, h });
+    console.log(`[img] Generated in ${((Date.now() - t0) / 1000).toFixed(1)}s (${(result.data.length / 1024).toFixed(0)}KB) [${result.mimeType}]`);
 
-    await redis.set(cacheKey, imageData, { EX: 30 * 24 * 60 * 60 });
+    // Upload original
+    const origDataUri = `data:${result.mimeType};base64,${result.data}`;
+    const origMediaUrl = await uploadToCdn(media, origDataUri);
+    if (!origMediaUrl) {
+      return c.json({ error: 'Failed to upload image to Reddit CDN after 3 attempts' }, 500);
+    }
+    console.log(`[img] Original uploaded: ${origMediaUrl}`);
+    await redis.set(origKey, origMediaUrl, { EX: TTL });
 
-    return c.json({ image: imageData });
+    // Resize + upload sized
+    try {
+      const origBuf = Buffer.from(result.data, 'base64');
+      const resizedBuf = resizePng(origBuf, w, h);
+      const resizedUri = `data:image/png;base64,${resizedBuf.toString('base64')}`;
+      const resizedUrl = await uploadToCdn(media, resizedUri);
+      if (resizedUrl) {
+        await redis.set(sizedKey, resizedUrl, { EX: TTL });
+        console.log(`[img] Resized ${w}x${h} uploaded: ${resizedUrl}`);
+        return c.json({ url: resizedUrl });
+      }
+    } catch (resizeErr) {
+      console.warn(`[img] Resize failed, returning original:`, resizeErr.message);
+    }
+
+    return c.json({ url: origMediaUrl });
   } catch (err) {
     console.error('[img] Error:', err.message);
     return c.json({ error: err.message }, 500);

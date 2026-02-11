@@ -1542,11 +1542,12 @@ async function loadPreviewImages(images, ctx, onProgress) {
         console.warn(`Image generate "${id}" failed:`, data.error);
         return null;
       }
-      if (!data.image) {
-        console.warn(`Image generate "${id}": no image data in response`);
+      if (!data.url) {
+        console.warn(`Image generate "${id}": no url in response`);
         return null;
       }
-      const blob = await fetch(`data:image/png;base64,${data.image}`).then(r => r.blob());
+      const imgResp = await fetch(data.url);
+      const blob = await imgResp.blob();
       return createImageBitmap(blob);
     }
     return null;

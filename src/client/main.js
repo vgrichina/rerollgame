@@ -287,8 +287,8 @@ async function loadGeneratedImage(id, res) {
     throw new Error(`Image generation failed for "${id}": ${resp.status}`);
   }
   const data = await resp.json();
-  // data.image is base64 PNG
-  const blob = await fetch(`data:image/png;base64,${data.image}`).then((r) => r.blob());
+  const imgResp = await fetch(data.url);
+  const blob = await imgResp.blob();
   return createImageBitmap(blob);
 }
 

@@ -21,11 +21,12 @@
     "@devvit/start": "0.12.12",
     "@devvit/web": "0.12.12",
     "@hono/node-server": "1.19.8",
+    "@jitl/quickjs-singlefile-cjs-release-sync": "^0.31.0",
     "devvit": "0.12.12",
     "hono": "4.11.4",
+    "pngjs": "^7.0.0",
     "quickjs-emscripten": "^0.31.0",
-    "quickjs-emscripten-core": "^0.31.0",
-    "@jitl/quickjs-singlefile-cjs-release-sync": "^0.31.0"
+    "quickjs-emscripten-core": "^0.31.0"
   },
   "devDependencies": {
     "dotenv": "^16.4.0",
