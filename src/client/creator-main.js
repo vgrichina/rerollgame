@@ -7,14 +7,25 @@ import demoGameCode from '../shared/test-games/roofrunner.js?raw';
 const root = document.getElementById('root');
 
 // Slot machine components
+const GENRES = [
+  { name: 'platformer', examples: 'jump between platforms, climb to the top, side-scrolling adventure' },
+  { name: 'shooter', examples: 'space invaders, twin-stick, bullet hell, turret defense' },
+  { name: 'puzzle', examples: 'match-3, sliding tiles, sokoban, tetris-like, breakout, connect paths' },
+  { name: 'arcade', examples: 'snake, pong, asteroids, frogger, whack-a-mole' },
+  { name: 'racing', examples: 'top-down racer, obstacle dodge, endless runner, time trial' },
+  { name: 'survival', examples: 'enemy waves, gather resources, tower defense, shrinking safe zone' },
+  { name: 'action', examples: 'arena combat, boss rush, beat-em-up, roguelike rooms' },
+];
+
 const SLOTS = {
-  genre: ['platformer', 'shooter', 'puzzle', 'racing', 'tower defense', 'RPG', 'rhythm', 'survival', 'endless runner', 'breakout', 'snake', 'match-3', 'bullet hell', 'roguelike', 'pinball'],
+  genre: GENRES.map(g => g.name),
   theme: ['space', 'underwater', 'medieval', 'cyberpunk', 'jungle', 'ice world', 'desert', 'haunted house', 'candy land', 'volcanic', 'pirate', 'ninja', 'robot factory', 'dream world', 'tiny bugs'],
-  mechanic: ['powerups', 'gravity flip', 'time rewind', 'combo chains', 'shield bash', 'dash attack', 'double jump', 'teleport', 'shrink and grow', 'bouncing', 'grappling hook', 'wall sliding', 'clone split', 'magnet pull', 'charge shot'],
-  twist: ['enemies split when hit', 'screen rotates slowly', 'everything speeds up over time', 'one-hit kills both ways', 'shrinking arena', 'random portals appear', 'collect coins to survive', 'day/night cycle changes enemies', 'floor is lava', 'everything bounces'],
+  mechanic: ['powerups', 'gravity flip', 'combo chains', 'teleport', 'shrink and grow', 'bouncing', 'magnet pull', 'dash', 'deflect', 'phase through walls'],
+  twist: ['everything speeds up over time', 'one-hit kills both ways', 'collect coins to survive', 'everything bounces', 'shrinking arena', 'random portals appear', 'controls reverse periodically', 'you can only see near the player', 'screen wraps around', 'you grow bigger every time you score', 'you can\'t stop moving', 'gravity shifts periodically'],
+  mood: ['frantic', 'chill', 'creepy', 'silly', 'competitive', 'zen'],
 };
 
-const SLOT_LABELS = { genre: 'Genre', theme: 'Theme', mechanic: 'Mechanic', twist: 'Twist' };
+const SLOT_LABELS = { genre: 'Genre', theme: 'Theme', mechanic: 'Mechanic', twist: 'Twist', mood: 'Mood' };
 const SLOT_KEYS = Object.keys(SLOTS);
 
 function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -24,7 +35,9 @@ let slotValues = {};
 function rollAll() { SLOT_KEYS.forEach(k => { slotValues[k] = pickRandom(SLOTS[k]); }); }
 function rollOne(key) { slotValues[key] = pickRandom(SLOTS[key]); }
 function buildDescription() {
-  return `a ${slotValues.genre} game set in ${slotValues.theme} with ${slotValues.mechanic} where ${slotValues.twist}`;
+  const genre = GENRES.find(g => g.name === slotValues.genre);
+  const examples = genre ? ` (e.g. ${genre.examples})` : '';
+  return `a ${slotValues.mood} ${slotValues.genre} game${examples} set in ${slotValues.theme} with ${slotValues.mechanic} where ${slotValues.twist}`;
 }
 
 // State
@@ -454,9 +467,10 @@ async function startEdit(description) {
 function getGenerationSteps() {
   return [
     { label: `Setting up ${slotValues.genre || 'game'} engine`, threshold: 10 },
-    { label: `Building ${slotValues.theme || 'world'} theme`, threshold: 30 },
-    { label: `Adding ${slotValues.mechanic || 'mechanics'}`, threshold: 55 },
-    { label: `Wiring ${slotValues.twist || 'twist'} logic`, threshold: 75 },
+    { label: `Building ${slotValues.theme || 'world'} theme`, threshold: 25 },
+    { label: `Adding ${slotValues.mechanic || 'mechanics'}`, threshold: 45 },
+    { label: `Wiring ${slotValues.twist || 'twist'} logic`, threshold: 65 },
+    { label: `Tuning ${slotValues.mood || ''} mood`, threshold: 80 },
     { label: 'Polishing & testing', threshold: 90 },
   ];
 }
