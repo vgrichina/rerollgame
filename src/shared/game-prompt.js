@@ -66,18 +66,27 @@ function getInputReference() {
 <input-api>
 ## Input Object (passed to update)
 
-Buttons (boolean, true while held):
-- input.up, input.down, input.left, input.right - Directional
-- input.a, input.b - Action buttons (keyboard: Z/Space, X)
+IMPORTANT: Games run on BOTH desktop (keyboard + mouse) and mobile (touch only).
+Mobile has NO physical keyboard. The host shows a virtual d-pad and buttons on mobile
+when controlScheme is "dpad" or "both", but pointer input always works everywhere.
 
-Pressed (boolean, true only on first frame):
-- input.upPressed, input.downPressed, input.leftPressed, input.rightPressed
-- input.aPressed, input.bPressed
+Two control schemes — pick one or combine both:
 
-Pointer/touch:
-- input.pointerDown - true while pointer is down
-- input.pointerPressed - true only on first frame of press
-- input.pointerX, input.pointerY - Coordinates in game space (0-width, 0-height)
+A) Pointer-based (works identically on desktop and mobile):
+   Best for: tap targets, drag controls, aim-and-shoot, puzzle games
+   - input.pointerDown - true while pointer/finger is held
+   - input.pointerPressed - true only on first frame of press
+   - input.pointerX, input.pointerY - Coordinates in game space (0-width, 0-height)
+
+B) D-pad + buttons (keyboard on desktop, virtual pad on mobile):
+   Best for: platformers, classic arcade, anything needing continuous directional input
+   - input.up, input.down, input.left, input.right - Directional (boolean, true while held)
+   - input.a, input.b - Action buttons (boolean, true while held)
+   - input.upPressed, input.downPressed, input.leftPressed, input.rightPressed - First frame only
+   - input.aPressed, input.bPressed - First frame only
+
+When using d-pad controls, also accept pointer as alternative where it makes sense
+(e.g. input.aPressed || input.pointerPressed for jump/action).
 </input-api>`;
 }
 
@@ -114,7 +123,9 @@ function getRequirements() {
   return `
 <requirements>
 - MUST implement metadata(), resources(), update(deltaTime, input) as global functions
-- metadata() returns {title, description, controls:[], width, height} (default 400x400)
+- metadata() returns {title, description, controlScheme, controls:[], width, height} (default 400x400)
+- controlScheme MUST be one of: "pointer" (tap/drag only), "dpad" (d-pad + buttons), or "both" (d-pad + pointer)
+- controls[] MUST include descriptions for both desktop and mobile. Use keywords: "left/right/up/down/a/b" for desktop keys, "tap/drag/swipe" for mobile touch
 - resources() returns {images:{...}, sounds:{...}} — ALWAYS define images for game entities
 - update(dt, input) returns array of command objects
 - Use module-level \`let state;\` for game state, initialize on first update call

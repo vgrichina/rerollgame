@@ -7,7 +7,8 @@ function metadata() {
   return {
     title: 'Roof Runner',
     description: 'Sprint across rooftops! Jump the gaps, dodge obstacles, survive the city.',
-    controls: ['a/space: jump', 'a/space (in air): double jump'],
+    controlScheme: 'both',
+    controls: ['a/space: jump', 'a/space (in air): double jump', 'tap: jump', 'tap (in air): double jump'],
     width: 400,
     height: 400,
   };

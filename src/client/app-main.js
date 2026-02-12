@@ -1273,6 +1273,23 @@ async function renderPlaying() {
           <div id="preview-go-score" style="color:var(--primary); font:bold 20px monospace;"></div>
           ${gameOverButtons}
         </div>
+        <div id="controls-overlay" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.82); flex-direction:column; align-items:center; justify-content:center; gap:10px; z-index:10; cursor:pointer; animation:fadeIn 0.3s ease-out;">
+          <div id="controls-overlay-content" style="color:#fff; font:13px monospace; text-align:center; line-height:1.8; max-width:85%; pointer-events:none;"></div>
+          <div style="color:#666; font:11px monospace; margin-top:8px; pointer-events:none;">tap to start</div>
+        </div>
+        <button id="controls-help-btn" style="display:none; position:absolute; bottom:8px; right:8px; width:28px; height:28px; border-radius:50%; border:1px solid rgba(255,255,255,0.25); background:rgba(0,0,0,0.4); color:rgba(255,255,255,0.5); font:bold 14px monospace; cursor:pointer; z-index:5; line-height:28px; padding:0;">?</button>
+        <div id="virtual-pad" style="display:none; position:absolute; bottom:0; left:0; width:100%; height:100%; pointer-events:none; z-index:4;">
+          <div id="vpad-dpad" style="position:absolute; bottom:12px; left:12px; width:100px; height:100px; pointer-events:auto; touch-action:none; opacity:0.25;">
+            <div data-dir="up" style="position:absolute; left:33px; top:0; width:34px; height:34px; background:rgba(255,255,255,0.3); border-radius:6px; display:flex; align-items:center; justify-content:center; font:bold 16px monospace; color:#fff;">&#9650;</div>
+            <div data-dir="left" style="position:absolute; left:0; top:33px; width:34px; height:34px; background:rgba(255,255,255,0.3); border-radius:6px; display:flex; align-items:center; justify-content:center; font:bold 16px monospace; color:#fff;">&#9664;</div>
+            <div data-dir="right" style="position:absolute; right:0; top:33px; width:34px; height:34px; background:rgba(255,255,255,0.3); border-radius:6px; display:flex; align-items:center; justify-content:center; font:bold 16px monospace; color:#fff;">&#9654;</div>
+            <div data-dir="down" style="position:absolute; left:33px; bottom:0; width:34px; height:34px; background:rgba(255,255,255,0.3); border-radius:6px; display:flex; align-items:center; justify-content:center; font:bold 16px monospace; color:#fff;">&#9660;</div>
+          </div>
+          <div id="vpad-buttons" style="position:absolute; bottom:12px; right:12px; width:80px; height:100px; pointer-events:auto; touch-action:none; opacity:0.25;">
+            <div data-btn="b" style="position:absolute; right:0; top:0; width:38px; height:38px; background:rgba(255,255,255,0.3); border-radius:50%; display:flex; align-items:center; justify-content:center; font:bold 13px monospace; color:#fff;">B</div>
+            <div data-btn="a" style="position:absolute; right:0; bottom:0; width:50px; height:50px; background:rgba(255,255,255,0.3); border-radius:50%; display:flex; align-items:center; justify-content:center; font:bold 15px monospace; color:#fff;">A</div>
+          </div>
+        </div>
       </div>
       ${isPublished ? '' : `<div id="debug-drawer" style="display:${debugPanelOpen ? 'flex' : 'none'}; flex-direction:column; width:100%; height:40vh; background:var(--surface-1); border:1px solid var(--border); border-radius:8px; overflow:hidden; flex-shrink:0;">
         <div id="debug-tabs" style="display:flex; border-bottom:1px solid var(--border); flex-shrink:0;">
@@ -1408,6 +1425,119 @@ async function startPreviewGame(code) {
     addConsoleLog('info', `Resources: ${imgCount} images, ${sndCount} sounds`);
     if (debugPanelOpen) fillDebugTab();
 
+    // --- Controls overlay + virtual pad ---
+    const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const controlScheme = metadata.controlScheme || 'both';
+    const controlsOverlay = document.getElementById('controls-overlay');
+    const controlsContent = document.getElementById('controls-overlay-content');
+    const helpBtn = document.getElementById('controls-help-btn');
+    const virtualPad = document.getElementById('virtual-pad');
+    let gameStarted = false;
+    let gamePaused = false;
+
+    // Build overlay content from metadata.controls
+    if (controlsOverlay && controlsContent) {
+      const lines = metadata.controls || [];
+      const desktopLines = lines.filter(l => /left|right|up|down|\ba\b|\bb\b|space|arrow/i.test(l) && !/tap|drag|swipe/i.test(l));
+      const mobileLines = lines.filter(l => /tap|drag|swipe|touch/i.test(l));
+      let html = '';
+      if (desktopLines.length) {
+        html += '<div style="color:#888; font-size:10px; text-transform:uppercase; letter-spacing:2px; margin-bottom:4px;">Desktop</div>';
+        html += desktopLines.map(l => `<div>${escapeHtml(l)}</div>`).join('');
+      }
+      if (mobileLines.length) {
+        html += '<div style="color:#888; font-size:10px; text-transform:uppercase; letter-spacing:2px; margin-top:10px; margin-bottom:4px;">Mobile</div>';
+        html += mobileLines.map(l => `<div>${escapeHtml(l)}</div>`).join('');
+      }
+      if (!html && lines.length) {
+        html = lines.map(l => `<div>${escapeHtml(l)}</div>`).join('');
+      }
+      controlsContent.innerHTML = html;
+      controlsOverlay.style.display = 'flex';
+      gamePaused = true;
+    }
+
+    function dismissOverlay() {
+      if (controlsOverlay) controlsOverlay.style.display = 'none';
+      gamePaused = false;
+      if (!gameStarted) {
+        gameStarted = true;
+        tryResumeAudio();
+      }
+    }
+
+    function showOverlay() {
+      if (controlsOverlay && !isGameOver) {
+        controlsOverlay.style.display = 'flex';
+        gamePaused = true;
+      }
+    }
+
+    if (controlsOverlay) {
+      controlsOverlay.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        dismissOverlay();
+      });
+    }
+
+    // [?] help button
+    if (helpBtn) {
+      helpBtn.style.display = 'block';
+      helpBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (controlsOverlay.style.display === 'flex') {
+          dismissOverlay();
+        } else {
+          showOverlay();
+        }
+      });
+    }
+
+    // Virtual pad for mobile
+    const vpadDirections = new Set();
+    const vpadButtons = new Set();
+
+    if (isMobile && controlScheme !== 'pointer' && virtualPad) {
+      virtualPad.style.display = 'block';
+
+      // D-pad touch handling
+      const dpad = document.getElementById('vpad-dpad');
+
+      function updateDpadFromTouch(e) {
+        vpadDirections.clear();
+        for (const touch of e.touches) {
+          const el = document.elementFromPoint(touch.clientX, touch.clientY);
+          if (el && el.dataset.dir && dpad.contains(el)) {
+            vpadDirections.add(el.dataset.dir);
+          }
+        }
+      }
+
+      dpad.addEventListener('touchstart', (e) => { e.preventDefault(); updateDpadFromTouch(e); tryResumeAudio(); }, { passive: false });
+      dpad.addEventListener('touchmove', (e) => { e.preventDefault(); updateDpadFromTouch(e); }, { passive: false });
+      dpad.addEventListener('touchend', (e) => { e.preventDefault(); updateDpadFromTouch(e); }, { passive: false });
+      dpad.addEventListener('touchcancel', (e) => { e.preventDefault(); vpadDirections.clear(); }, { passive: false });
+
+      // Button touch handling
+      const btnContainer = document.getElementById('vpad-buttons');
+
+      function updateBtnsFromTouch(e) {
+        vpadButtons.clear();
+        for (const touch of e.touches) {
+          const el = document.elementFromPoint(touch.clientX, touch.clientY);
+          if (el && el.dataset.btn && btnContainer.contains(el)) {
+            vpadButtons.add(el.dataset.btn);
+          }
+        }
+      }
+
+      btnContainer.addEventListener('touchstart', (e) => { e.preventDefault(); updateBtnsFromTouch(e); tryResumeAudio(); }, { passive: false });
+      btnContainer.addEventListener('touchmove', (e) => { e.preventDefault(); updateBtnsFromTouch(e); }, { passive: false });
+      btnContainer.addEventListener('touchend', (e) => { e.preventDefault(); updateBtnsFromTouch(e); }, { passive: false });
+      btnContainer.addEventListener('touchcancel', (e) => { e.preventDefault(); vpadButtons.clear(); }, { passive: false });
+    }
+
     // Input state for this preview session
     const input = {
       up: false, down: false, left: false, right: false, a: false, b: false,
@@ -1424,6 +1554,7 @@ async function startPreviewGame(code) {
     };
 
     function onKeyDown(e) {
+      if (gamePaused) { dismissOverlay(); e.preventDefault(); return; }
       const btn = keyMap[e.key];
       if (btn) { input[btn] = true; e.preventDefault(); tryResumeAudio(); }
     }
@@ -1432,6 +1563,7 @@ async function startPreviewGame(code) {
       if (btn) { input[btn] = false; }
     }
     function onPointerDown(e) {
+      if (gamePaused) return;
       input.pointerDown = true;
       updatePointer(e);
       tryResumeAudio();
@@ -1470,8 +1602,24 @@ async function startPreviewGame(code) {
     function loop(now) {
       if (isGameOver || !previewSandbox) return;
 
+      if (gamePaused) {
+        lastTime = now;
+        previewAnimFrame = requestAnimationFrame(loop);
+        return;
+      }
+
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
+
+      // Merge virtual pad state into input
+      if (isMobile && controlScheme !== 'pointer') {
+        for (const dir of ['up', 'down', 'left', 'right']) {
+          input[dir] = vpadDirections.has(dir);
+        }
+        for (const btn of ['a', 'b']) {
+          input[btn] = vpadButtons.has(btn);
+        }
+      }
 
       for (const key of ['up', 'down', 'left', 'right', 'a', 'b']) {
         input[key + 'Pressed'] = input[key] && !prevInput[key];
@@ -1504,6 +1652,8 @@ async function startPreviewGame(code) {
             isGameOver = true;
             addConsoleLog('info', `Game Over (score: ${cmd.value || 0})`);
             if (scoreEl) scoreEl.textContent = '';
+            if (virtualPad) virtualPad.style.display = 'none';
+            if (helpBtn) helpBtn.style.display = 'none';
             const goOverlay = document.getElementById('preview-gameover');
             const goScore = document.getElementById('preview-go-score');
             if (goOverlay) goOverlay.style.display = 'flex';

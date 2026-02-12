@@ -338,10 +338,10 @@ api.post('/game/publish', async (c) => {
 
 // Load a test game
 api.get('/game/test', async (c) => {
-  const name = c.req.query('name') || 'bouncer';
+  const name = c.req.query('name') || 'roofrunner';
 
   const testGames = {
-    bouncer: () => import('../shared/test-games/bouncer.js?raw'),
+    roofrunner: () => import('../shared/test-games/roofrunner.js?raw'),
   };
 
   const loader = testGames[name];

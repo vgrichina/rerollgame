@@ -42,6 +42,9 @@ export function validateMetadata(meta) {
   if (!meta.title || typeof meta.title !== 'string') {
     errors.push('Title is required');
   }
+  if (meta.controlScheme && !['pointer', 'dpad', 'both'].includes(meta.controlScheme)) {
+    errors.push('controlScheme must be "pointer", "dpad", or "both"');
+  }
   if (meta.width && (typeof meta.width !== 'number' || meta.width < 100 || meta.width > 800)) {
     errors.push('Width must be 100-800');
   }
