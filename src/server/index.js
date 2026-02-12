@@ -4,6 +4,7 @@ import { createServer, getServerPort } from '@devvit/web/server';
 import { menu } from './routes/menu.js';
 import { triggers } from './routes/triggers.js';
 import { generateImage as geminiImage } from './gemini.js';
+import { removeBackground } from './chromakey.js';
 import { createResponse, getResponse } from './openai-responses.js';
 import { JobManager } from './job-manager.js';
 import { DraftManager } from './draft-manager.js';
@@ -448,8 +449,13 @@ api.post('/image/generate', async (c) => {
     const result = await geminiImage(geminiKey, prompt, { w, h });
     console.log(`[img] Generated in ${((Date.now() - t0) / 1000).toFixed(1)}s (${(result.data.length / 1024).toFixed(0)}KB) [${result.mimeType}]`);
 
-    // Upload original
-    const origDataUri = `data:${result.mimeType};base64,${result.data}`;
+    // Remove background (chromakey)
+    const rawBuf = Buffer.from(result.data, 'base64');
+    const transparentBuf = removeBackground(rawBuf);
+    const transparentB64 = transparentBuf.toString('base64');
+
+    // Upload original (now with transparent bg)
+    const origDataUri = `data:image/png;base64,${transparentB64}`;
     const origMediaUrl = await uploadToCdn(media, origDataUri);
     if (!origMediaUrl) {
       return c.json({ error: 'Failed to upload image to Reddit CDN after 3 attempts' }, 500);
@@ -459,8 +465,7 @@ api.post('/image/generate', async (c) => {
 
     // Resize + upload sized
     try {
-      const origBuf = Buffer.from(result.data, 'base64');
-      const resizedBuf = resizePng(origBuf, w, h);
+      const resizedBuf = resizePng(transparentBuf, w, h);
       const resizedUri = `data:image/png;base64,${resizedBuf.toString('base64')}`;
       const resizedUrl = await uploadToCdn(media, resizedUri);
       if (resizedUrl) {

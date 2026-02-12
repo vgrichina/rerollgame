@@ -88,7 +88,7 @@ function resources() {
       // Moon (AI-generated at load time)
       moon: {
         type: 'generate',
-        prompt: 'glowing full moon in dark night sky, pixel art style, transparent background',
+        prompt: 'full moon, pixel art style, flat colors, hard edges, no glow, no gradients',
         w: 48, h: 48,
       },
       // City skyline background layer (procedural)

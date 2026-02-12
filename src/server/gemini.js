@@ -10,7 +10,7 @@ export async function generateImage(apiKey, prompt, options = {}) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{
-        parts: [{ text: `Generate a ${w}x${h} pixel game sprite/asset: ${prompt}. Simple, clean pixel art style with transparent background.` }],
+        parts: [{ text: `Generate a ${w}x${h} pixel game sprite/asset: ${prompt}. Pixel art style, flat colors, hard edges, no glow, no gradients.\n[BACKGROUND]: solid flat uniform #FF00FF background.\nDo NOT use #FF00FF or similar colors on the subject.` }],
       }],
       generationConfig: {
         responseModalities: ['TEXT', 'IMAGE'],
@@ -31,7 +31,8 @@ export async function generateImage(apiKey, prompt, options = {}) {
   for (const part of parts) {
     const img = part.inlineData || part.inline_data;
     if (img) {
-      return img.data; // base64 image data
+      const mimeType = img.mimeType || img.mime_type || 'image/png';
+      return { data: img.data, mimeType }; // base64 image data + mime type
     }
   }
   throw new Error('No image data in Gemini response');
