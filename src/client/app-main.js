@@ -1263,6 +1263,7 @@ async function renderPlaying() {
       <div style="display:flex; align-items:center; gap:12px;">
         ${isPublished ? '' : '<button id="stop-btn" style="background:var(--surface-3); color:var(--text-1); border:none; border-radius:12px; padding:6px 16px; font-size:12px; cursor:pointer;">STOP</button>'}
         <span style="color:var(--text-2); font-size:12px;">${escapeHtml(version.metadata?.title || 'Untitled')}</span>
+        <button id="controls-help-btn" style="display:none; background:none; border:1px solid var(--border); border-radius:8px; padding:4px 10px; font-size:10px; font-family:monospace; cursor:pointer; color:var(--text-3);">?</button>
         <button id="restart-btn" style="background:var(--surface-3); color:var(--text-1); border:none; border-radius:12px; padding:6px 16px; font-size:12px; cursor:pointer;">RESTART</button>
         ${isPublished ? '' : `<button id="debug-btn" style="background:none; border:1px solid var(--border); border-radius:8px; padding:4px 10px; font-size:10px; font-family:monospace; cursor:pointer; color:${debugPanelOpen ? 'var(--primary)' : 'var(--text-3)'};">DBG</button>`}
       </div>
@@ -1277,7 +1278,6 @@ async function renderPlaying() {
           <div id="controls-overlay-content" style="color:#fff; font:13px monospace; text-align:center; line-height:1.8; max-width:85%; pointer-events:none;"></div>
           <div style="color:#666; font:11px monospace; margin-top:8px; pointer-events:none;">tap to start</div>
         </div>
-        <button id="controls-help-btn" style="display:none; position:absolute; bottom:8px; right:8px; width:28px; height:28px; border-radius:50%; border:1px solid rgba(255,255,255,0.25); background:rgba(0,0,0,0.4); color:rgba(255,255,255,0.5); font:bold 14px monospace; cursor:pointer; z-index:5; line-height:28px; padding:0;">?</button>
         <div id="virtual-pad" style="display:none; position:absolute; bottom:0; left:0; width:100%; height:100%; pointer-events:none; z-index:4;">
           <div id="vpad-dpad" style="position:absolute; bottom:12px; left:12px; width:100px; height:100px; pointer-events:auto; touch-action:none; opacity:0.25;">
             <div data-dir="up" style="position:absolute; left:33px; top:0; width:34px; height:34px; background:rgba(255,255,255,0.3); border-radius:6px; display:flex; align-items:center; justify-content:center; font:bold 16px monospace; color:#fff;">&#9650;</div>
@@ -1653,7 +1653,6 @@ async function startPreviewGame(code) {
             addConsoleLog('info', `Game Over (score: ${cmd.value || 0})`);
             if (scoreEl) scoreEl.textContent = '';
             if (virtualPad) virtualPad.style.display = 'none';
-            if (helpBtn) helpBtn.style.display = 'none';
             const goOverlay = document.getElementById('preview-gameover');
             const goScore = document.getElementById('preview-go-score');
             if (goOverlay) goOverlay.style.display = 'flex';
