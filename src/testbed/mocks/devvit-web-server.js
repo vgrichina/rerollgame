@@ -3,6 +3,7 @@
 import { DEFAULT_OPENAI_MODEL } from '../../shared/defaults.js';
 import { createClient } from 'redis';
 import { createServer as createServerHTTP } from 'node:http';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs/promises';
@@ -459,5 +460,24 @@ export const settings = {
       return process.env[envKey];
     }
     return defaults[key] || null;
+  },
+};
+
+/**
+ * Mock media API — writes images to dist/client/uploads/ and returns local URLs
+ */
+const uploadsDir = path.join(clientPath, 'uploads');
+
+export const media = {
+  async upload({ url: dataUri }) {
+    await fs.mkdir(uploadsDir, { recursive: true });
+    const match = dataUri.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!match) throw new Error('Invalid data URI');
+    const buf = Buffer.from(match[2], 'base64');
+    const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, 12);
+    const filename = `${hash}.${match[1]}`;
+    await fs.writeFile(path.join(uploadsDir, filename), buf);
+    console.log(`[TESTBED] Media saved: uploads/${filename} (${buf.length} bytes)`);
+    return { mediaUrl: `/uploads/${filename}` };
   },
 };
