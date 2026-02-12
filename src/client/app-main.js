@@ -1599,6 +1599,7 @@ async function startPreviewGame(code) {
 
     let lastTime = performance.now();
     let lastSlowLogTime = 0;
+    let lastScore = 0;
     function loop(now) {
       if (isGameOver || !previewSandbox) return;
 
@@ -1647,16 +1648,18 @@ async function startPreviewGame(code) {
         for (const cmd of commands) {
           if (!cmd || !cmd.op) continue;
           if (cmd.op === 'score') {
+            lastScore = cmd.value;
             if (scoreEl) scoreEl.textContent = 'SCORE: ' + cmd.value;
           } else if (cmd.op === 'gameOver') {
             isGameOver = true;
-            addConsoleLog('info', `Game Over (score: ${cmd.value || 0})`);
+            const finalScore = cmd.value ?? lastScore;
+            addConsoleLog('info', `Game Over (score: ${finalScore})`);
             if (scoreEl) scoreEl.textContent = '';
             if (virtualPad) virtualPad.style.display = 'none';
             const goOverlay = document.getElementById('preview-gameover');
             const goScore = document.getElementById('preview-go-score');
             if (goOverlay) goOverlay.style.display = 'flex';
-            if (goScore) goScore.textContent = '\u2605 ' + (cmd.value || 0) + ' \u2605';
+            if (goScore) goScore.textContent = '\u2605 ' + finalScore + ' \u2605';
           } else if (['tone', 'noise', 'sample', 'stop', 'stopAll', 'volume'].includes(cmd.op)) {
             audioCmds.push(cmd);
           } else {
