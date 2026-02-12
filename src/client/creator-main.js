@@ -1549,7 +1549,7 @@ async function loadPreviewImages(images, ctx, onProgress) {
       const resp = await fetch('/api/image/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: res.prompt, w: res.w || 64, h: res.h || 64 }),
+        body: JSON.stringify({ prompt: res.prompt, w: res.w || 64, h: res.h || 64, remove_bg: res.remove_bg }),
       });
       const data = await resp.json();
       if (!resp.ok) {

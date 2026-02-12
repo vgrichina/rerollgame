@@ -395,15 +395,16 @@ api.post('/image/generate', async (c) => {
   const { redis, settings, media } = await import('@devvit/web/server');
 
   const body = await c.req.json();
-  const { prompt, w: reqW, h: reqH } = body;
+  const { prompt, w: reqW, h: reqH, remove_bg: removeBg } = body;
 
   if (!prompt) return c.json({ error: 'Prompt is required' }, 400);
 
   const w = reqW || 64;
   const h = reqH || 64;
+  const bgFlag = removeBg ? 1 : 0;
   const promptHash = simpleHash(prompt);
-  const sizedKey = `img3:${promptHash}:${w}x${h}`;
-  const origKey = `img3:${promptHash}:orig`;
+  const sizedKey = `img3:${promptHash}:bg${bgFlag}:${w}x${h}`;
+  const origKey = `img3:${promptHash}:bg${bgFlag}:orig`;
   const TTL = 30 * 24 * 60 * 60;
 
   console.log(`[img] Request: "${prompt.slice(0, 60)}" ${w}x${h}`);
@@ -449,12 +450,12 @@ api.post('/image/generate', async (c) => {
     const result = await geminiImage(geminiKey, prompt, { w, h });
     console.log(`[img] Generated in ${((Date.now() - t0) / 1000).toFixed(1)}s (${(result.data.length / 1024).toFixed(0)}KB) [${result.mimeType}]`);
 
-    // Remove background (chromakey)
+    // Optionally remove background (chromakey)
     const rawBuf = Buffer.from(result.data, 'base64');
-    const transparentBuf = removeBackground(rawBuf);
-    const transparentB64 = transparentBuf.toString('base64');
+    const processedBuf = removeBg ? removeBackground(rawBuf) : rawBuf;
+    const transparentB64 = processedBuf.toString('base64');
 
-    // Upload original (now with transparent bg)
+    // Upload original
     const origDataUri = `data:image/png;base64,${transparentB64}`;
     const origMediaUrl = await uploadToCdn(media, origDataUri);
     if (!origMediaUrl) {
@@ -465,7 +466,7 @@ api.post('/image/generate', async (c) => {
 
     // Resize + upload sized
     try {
-      const resizedBuf = resizePng(transparentBuf, w, h);
+      const resizedBuf = resizePng(processedBuf, w, h);
       const resizedUri = `data:image/png;base64,${resizedBuf.toString('base64')}`;
       const resizedUrl = await uploadToCdn(media, resizedUri);
       if (resizedUrl) {

@@ -88,10 +88,9 @@ function getResourcesReference() {
 
 {
   images: {
-    "player": {type:"pixels", w:16, h:16, data:["#ff0000", "#00ff00", null, ...]},
     "tileset": {type:"hex", w:8, h:8, palette:["#000","#fff",...], rows:["01100110","10011001",...]},
     "bg": {type:"procedural", w:400, h:400, draw:[{op:"rect",x:0,y:0,w:400,h:400,fill:"#228"}]},
-    "enemy": {type:"generate", prompt:"pixel art red dragon 32x32", w:32, h:32}
+    "enemy": {type:"generate", prompt:"pixel art red dragon 32x32", w:32, h:32, remove_bg:true}
   },
   sounds: {
     "explosion": {type:"generate", wave:"noise", dur:0.4, env:{a:0.01,d:0.3,s:0,r:0.1}},
@@ -101,9 +100,13 @@ function getResourcesReference() {
   }
 }
 
+### Image types
+- "hex": palette-indexed pixel art. Use for small sprites 16px and under (icons, items, small characters, tiles). Compact and token-efficient.
+- "generate": AI-generated at load time. Use for characters and sprites larger than 16px where hand-drawing hex rows would be tedious and low-quality. Keep prompts short and specific (e.g. "pixel art red dragon 32x32"). Add remove_bg:true for sprites that need transparent backgrounds (characters, items, objects). Omit remove_bg for textures, backgrounds, and full-scene images. Limit to 1-4 per game.
+- "procedural": built from draw commands. Use for any size — backgrounds, tilemaps, large fills, or styled sprites.
+
 Image limits: max 20 images, max 512x512 pixels each.
 Sound limits: max 20 sounds.
-Image type "generate" is AI-generated at load time (requires server call).
 </resources-api>`;
 }
 
@@ -118,7 +121,7 @@ function getRequirements() {
 - Always include score tracking: push {op:"score", value:N}
 - Include win/lose conditions: push {op:"gameOver"} when game ends
 - If implementing lives, game over when lives reach 0 (not below 0)
-- Define pixel art images in resources() using "hex" type for characters, items, enemies. Use "procedural" type for larger backgrounds. Draw them with {op:"img", id, x, y, w, h}. Use rect/circle/text for HUD, particles, and simple effects only.
+- ALWAYS define images for game entities in resources(). Use "hex" for small sprites (16px and under). Use "generate" for characters and sprites larger than 16px. Use "procedural" for backgrounds. Draw them with {op:"img", id, x, y, w, h}. Use rect/circle/text for HUD, particles, and simple effects only.
 - Cap deltaTime: const dt = Math.min(deltaTime, 0.05)
 - No external dependencies, no DOM access, no fetch - pure logic only
 - Return commands as a flat array mixing draw + audio + meta commands

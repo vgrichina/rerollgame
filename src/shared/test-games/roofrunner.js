@@ -90,6 +90,7 @@ function resources() {
         type: 'generate',
         prompt: 'full moon, pixel art style, flat colors, hard edges, no glow, no gradients',
         w: 48, h: 48,
+        remove_bg: true,
       },
       // City skyline background layer (procedural)
       skyline: {
