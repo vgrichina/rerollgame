@@ -72,19 +72,26 @@ export function executeCommands(ctx, commands, imagePool) {
         const needsTransform = c.rotate || c.alpha != null;
         if (needsTransform) ctx.save();
         if (c.alpha != null) ctx.globalAlpha = c.alpha;
+        // Crisp pixel-art scaling
+        ctx.imageSmoothingEnabled = false;
+        // Snap to integer grid to avoid sub-pixel blurring
+        const dx = Math.round(c.x);
+        const dy = Math.round(c.y);
+        const dw = Math.round(c.w || (c.sx != null ? c.sw : img.width));
+        const dh = Math.round(c.h || (c.sx != null ? c.sh : img.height));
         if (c.rotate) {
-          const cx = c.x + (c.w || img.width) / 2;
-          const cy = c.y + (c.h || img.height) / 2;
+          const cx = dx + dw / 2;
+          const cy = dy + dh / 2;
           ctx.translate(cx, cy);
           ctx.rotate(c.rotate);
           ctx.translate(-cx, -cy);
         }
         if (c.sx != null) {
-          // Sub-rectangle source
-          ctx.drawImage(img, c.sx, c.sy, c.sw, c.sh, c.x, c.y, c.w || c.sw, c.h || c.sh);
+          ctx.drawImage(img, c.sx, c.sy, c.sw, c.sh, dx, dy, dw, dh);
         } else {
-          ctx.drawImage(img, c.x, c.y, c.w || img.width, c.h || img.height);
+          ctx.drawImage(img, dx, dy, dw, dh);
         }
+        ctx.imageSmoothingEnabled = true;
         if (needsTransform) ctx.restore();
         break;
       }
