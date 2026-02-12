@@ -52,7 +52,7 @@ function renderStarter() {
   `;
 
   document.getElementById('create-btn').addEventListener('click', (e) => {
-    requestExpandedMode(e, 'creator');
+    requestExpandedMode(e, 'app');
   });
 }
 
@@ -72,7 +72,7 @@ function renderGame() {
   `;
 
   document.getElementById('play-btn').addEventListener('click', (e) => {
-    requestExpandedMode(e, 'game');
+    requestExpandedMode(e, 'app');
   });
 }
 

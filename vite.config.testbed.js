@@ -19,8 +19,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         splash: path.resolve(__dirname, 'src/client/splash.html'),
-        creator: path.resolve(__dirname, 'src/client/creator.html'),
-        game: path.resolve(__dirname, 'src/client/game.html'),
+        app: path.resolve(__dirname, 'src/client/app.html'),
       },
       output: {
         entryFileNames: '[name].js',

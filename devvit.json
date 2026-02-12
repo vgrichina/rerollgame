@@ -8,11 +8,8 @@
         "inline": true,
         "entry": "splash.html"
       },
-      "game": {
-        "entry": "game.html"
-      },
-      "creator": {
-        "entry": "creator.html"
+      "app": {
+        "entry": "app.html"
       }
     }
   },
