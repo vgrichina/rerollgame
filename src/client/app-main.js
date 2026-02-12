@@ -1024,7 +1024,7 @@ function fillImgsTab(container) {
     <div class="dbg-img-item" data-id="${escapeHtml(id)}" style="display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer; padding:6px; border-radius:6px; border:1px solid var(--border); background:var(--surface-2);">
       <canvas class="dbg-img-canvas" data-id="${escapeHtml(id)}" width="1" height="1" style="image-rendering:pixelated; width:48px; height:48px; background:#000; border-radius:4px;"></canvas>
       <div style="font-size:9px; color:var(--text-2); max-width:64px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center;">${escapeHtml(id)}</div>
-      <div style="font-size:8px; color:var(--text-3);">${res.type} ${res.w || '?'}x${res.h || '?'}</div>
+      <div style="font-size:8px; color:var(--text-3);">${res.type} ${res.w || '?'}x${res.h || '?'}${res.remove_bg ? ' bg' : ''}</div>
     </div>
   `).join('');
 
@@ -1035,7 +1035,7 @@ function fillImgsTab(container) {
     </div>
   `;
 
-  // Render bitmaps onto thumbnail canvases
+  // Render bitmaps onto thumbnail canvases (fit to 48px box preserving aspect ratio)
   requestAnimationFrame(() => {
     container.querySelectorAll('.dbg-img-canvas').forEach(canvas => {
       const id = canvas.dataset.id;
@@ -1043,6 +1043,9 @@ function fillImgsTab(container) {
       if (bitmap) {
         canvas.width = bitmap.width;
         canvas.height = bitmap.height;
+        const scale = Math.min(48 / bitmap.width, 48 / bitmap.height);
+        canvas.style.width = `${Math.round(bitmap.width * scale)}px`;
+        canvas.style.height = `${Math.round(bitmap.height * scale)}px`;
         const cx = canvas.getContext('2d');
         cx.drawImage(bitmap, 0, 0);
       }
@@ -1062,6 +1065,7 @@ function fillExpandedImage(container, id, res) {
   const details = [`Type: ${res.type}`, `Size: ${res.w || '?'} × ${res.h || '?'}`];
   if (res.type === 'hex' && res.palette) details.push(`Palette: ${res.palette.join(' ')}`);
   if (res.type === 'generate' && res.prompt) details.push(`Prompt: ${res.prompt}`);
+  if (res.type === 'generate' && res.remove_bg) details.push(`BG removal: yes`);
   if (res.type === 'procedural' && res.draw) details.push(`Draw ops: ${res.draw.length}`);
 
   container.innerHTML = `
@@ -1597,7 +1601,7 @@ async function loadPreviewImages(images, ctx, onProgress) {
       const resp = await fetch('/api/image/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: res.prompt, w: res.w || 64, h: res.h || 64 }),
+        body: JSON.stringify({ prompt: res.prompt, w: res.w || 64, h: res.h || 64, remove_bg: res.remove_bg }),
       });
       const data = await resp.json();
       if (!resp.ok) {
